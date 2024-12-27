@@ -3,7 +3,6 @@
 namespace MediaWiki\Extension\KaTeX;
 
 use MediaWiki\Hook\ParserFirstCallInitHook;
-use MediaWiki\Html\Html;
 use MediaWiki\Parser\Parser;
 use PPFrame;
 
@@ -27,19 +26,10 @@ class Hooks implements ParserFirstCallInitHook {
 
 		if ( array_key_exists( 'mode', $params ) && $params['mode'] == 'display' ) {
 			// using display mode
-			$element = Html::element(
-				'span',
-				array_key_exists( 'class', $params ) ? [ 'class' => htmlspecialchars( $params['class'] ) ] : [],
-				"[displayMath]{$text}[/displayMath]"
-			);
+			return "[displayMath]{$text}[/displayMath]";
 		} else {
 			// using inline mode
-			$element = Html::element(
-				'span',
-				array_key_exists( 'class', $params ) ? [ 'class' => htmlspecialchars( $params['class'] ) ] : [],
-				"[math]{$text}[/math]"
-			);
+			return "[math]{$text}[/math]";
 		}
-		return [ $element, 'markerType' => 'nowiki' ];
 	}
 }
