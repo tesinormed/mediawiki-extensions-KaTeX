@@ -1,0 +1,8 @@
+{
+	"@metadata": {
+		"authors": [
+			"tesinormed"
+		]
+	},
+	"katex-desc": "Implements [https://katex.org/ KaTeX]"
+}

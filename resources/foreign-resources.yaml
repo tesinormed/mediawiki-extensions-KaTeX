@@ -1,0 +1,5 @@
+KaTeX:
+  homepage: https://katex.org/
+  license: MIT
+  version: 0.16.18
+  type: doc-only
