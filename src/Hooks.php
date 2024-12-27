@@ -3,13 +3,15 @@
 namespace MediaWiki\Extension\KaTeX;
 
 use MediaWiki\Hook\ParserFirstCallInitHook;
+use MediaWiki\Html\Html;
 use MediaWiki\Parser\Parser;
 use PPFrame;
 
 class Hooks implements ParserFirstCallInitHook {
 	/** @inheritDoc */
 	public function onParserFirstCallInit( $parser ) {
-		$parser->setHook( 'math', [ $this, 'renderMath' ] );
+		$parser->setHook( 'math', [ $this, 'renderTag' ] );
+		$parser->setHook( 'chem', [ $this, 'renderTag' ] );
 	}
 
 	/**
@@ -19,12 +21,25 @@ class Hooks implements ParserFirstCallInitHook {
 	 * @param PPFrame $frame
 	 * @return string|array the outputted wikitext / HTML
 	 */
-	public function renderMath( ?string $text, array $params, Parser $parser, PPFrame $frame ): string|array {
+	public function renderTag( ?string $text, array $params, Parser $parser, PPFrame $frame ): string|array {
+		// add KaTeX and its configuration
 		$parser->getOutput()->addModules( [ 'KaTeX', 'ext.KaTeX' ] );
+
 		if ( array_key_exists( 'mode', $params ) && $params['mode'] == 'display' ) {
-			return "[displayMath]{$text}[/displayMath]";
+			// using display mode
+			$element = Html::element(
+				'span',
+				array_key_exists( 'class', $params ) ? [ 'class' => htmlspecialchars( $params['class'] ) ] : [],
+				"[displayMath]{$text}[/displayMath]"
+			);
 		} else {
-			return "[math]{$text}[/math]";
+			// using inline mode
+			$element = Html::element(
+				'span',
+				array_key_exists( 'class', $params ) ? [ 'class' => htmlspecialchars( $params['class'] ) ] : [],
+				"[math]{$text}[/math]"
+			);
 		}
+		return [ $element, 'markerType' => 'nowiki' ];
 	}
 }
