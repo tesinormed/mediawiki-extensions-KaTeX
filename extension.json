@@ -1,6 +1,6 @@
 {
 	"name": "KaTeX",
-	"version": "0.3.1",
+	"version": "0.4.0",
 	"author": [
 		"tesinormed"
 	],
@@ -34,19 +34,12 @@
 			"remoteExtPath": "KaTeX/resources/KaTeX",
 			"scripts": [
 				"katex.js",
-				"contrib/auto-render.js",
+				"contrib/mathtex-script-type.js",
 				"contrib/copy-tex.js",
 				"contrib/mhchem.js"
 			],
 			"styles": [
 				"katex.css"
-			]
-		},
-		"ext.KaTeX": {
-			"localBasePath": "modules/ext.KaTeX",
-			"remoteExtPath": "KaTeX/modules/ext.KaTeX",
-			"scripts": [
-				"ext.KaTeX.js"
 			]
 		}
 	},
