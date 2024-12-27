@@ -14,7 +14,7 @@ class Hooks implements ParserFirstCallInitHook {
 	}
 
 	/**
-	 * @param null|string $text the TeX to render
+	 * @param null|string $text the text to render
 	 * @param array $params parameters given to the parser tag
 	 * @param Parser $parser the {@link Parser} instance
 	 * @param PPFrame $frame
@@ -23,6 +23,9 @@ class Hooks implements ParserFirstCallInitHook {
 	public function renderTag( ?string $text, array $params, Parser $parser, PPFrame $frame ): string|array {
 		// add KaTeX and its configuration
 		$parser->getOutput()->addModules( [ 'KaTeX', 'ext.KaTeX' ] );
+
+		// trim any whitespace around the actual text
+		$text = trim( $text );
 
 		if ( array_key_exists( 'mode', $params ) && $params['mode'] == 'display' ) {
 			// using display mode
