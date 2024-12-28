@@ -32,7 +32,7 @@ class Hooks implements ParserFirstCallInitHook {
 			// using display mode
 			$element = Html::element(
 				'script',
-				[ 'type' => 'math/tex; mode=display' ],
+				[ 'type' => 'math/tex;mode=display' ],
 				$text
 			);
 		} else {
