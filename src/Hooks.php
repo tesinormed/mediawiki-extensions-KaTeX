@@ -40,7 +40,7 @@ class Hooks implements ParserFirstCallInitHook {
 		}
 
 		// add KaTeX to the page
-		$parser->getOutput()->addModules( [ 'KaTeX', 'ext.KaTeX' ] );
+		$parser->getOutput()->addModules( [ 'ext.KaTeX' ] );
 		$parser->getOutput()->setJsConfigVar( 'wgKaTeXErrorColor', $this->extensionConfig->get( 'KaTeXErrorColor' ) );
 		$parser->getOutput()->setJsConfigVar( 'wgKaTeXOutput', $this->extensionConfig->get( 'KaTeXOutput' ) );
 
