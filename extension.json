@@ -1,6 +1,6 @@
 {
 	"name": "KaTeX",
-	"version": "0.5.0",
+	"version": "0.6.0",
 	"author": [
 		"tesinormed"
 	],
@@ -16,6 +16,17 @@
 	},
 	"AutoloadNamespaces": {
 		"MediaWiki\\Extension\\KaTeX\\": "src/"
+	},
+	"config": {
+		"KaTeXErrorColor": {
+			"value": "#cc0000"
+		},
+		"KaTeXOutput": {
+			"value": "htmlAndMathml"
+		}
+	},
+	"ConfigRegistry": {
+		"katex": "GlobalVarConfig::newInstance"
 	},
 	"HookHandlers": {
 		"main": {

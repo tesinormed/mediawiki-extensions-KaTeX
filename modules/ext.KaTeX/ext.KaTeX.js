@@ -1,7 +1,18 @@
 mw.hook( 'wikipage.content' ).add( ( $content ) => {
-	$content.find( 'script[type^="math/tex"]' ).each( function () {
-		const displayMode = this.getAttribute( 'type' ) === 'math/tex;mode=display';
-		const katexOptions = { displayMode: displayMode, throwOnError: false };
+	$content.find( '.mw-KaTeX' ).each( function () {
+		const elementClasses = this.className.split( ' ' );
+		const katexOptions = {
+			// user-specified
+			displayMode: elementClasses.includes( 'mw-KaTeX-displayMode' ),
+			leqno: elementClasses.includes( 'mw-KaTeX-leqno' ),
+			fleqn: elementClasses.includes( 'mw-KaTeX-fleqn' ),
+			// styling
+			errorColor: mw.config.get( 'wgKaTeXErrorColor' ),
+			// input and output
+			output: mw.config.get( 'wgKaTeXOutput' ),
+			trust: false,
+			throwOnError: false
+		};
 		this.outerHTML = katex.renderToString( this.textContent, katexOptions );
 	} );
 } );
