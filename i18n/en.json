@@ -4,5 +4,5 @@
 			"tesinormed"
 		]
 	},
-	"katex-desc": "Implements [https://katex.org/ KaTeX]"
+	"katex-desc": "Implements [https://katex.org/ KaTeX] parser tags"
 }

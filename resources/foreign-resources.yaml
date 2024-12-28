@@ -1,5 +1,10 @@
 KaTeX:
   homepage: https://katex.org/
   license: MIT
+  authors: Emily Eisenberg and Sophie Alpert
+  type: tar
   version: 0.16.18
-  type: doc-only
+  src: https://github.com/KaTeX/KaTeX/releases/download/v0.16.18/katex.tar.gz
+  integrity: sha384-hAhrbzH4kqVTkcuZStfCL+ZNcFXU1IkDQGavnhRAzNe1hR5DzV+bRUC1BKzShiGf
+  dest:
+    katex/*:
