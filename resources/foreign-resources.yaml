@@ -3,8 +3,8 @@ KaTeX:
   license: MIT
   authors: Emily Eisenberg and Sophie Alpert
   type: tar
-  version: 0.16.18
-  src: https://github.com/KaTeX/KaTeX/releases/download/v0.16.18/katex.tar.gz
-  integrity: sha384-hAhrbzH4kqVTkcuZStfCL+ZNcFXU1IkDQGavnhRAzNe1hR5DzV+bRUC1BKzShiGf
+  version: 0.16.19
+  src: https://github.com/KaTeX/KaTeX/releases/download/v0.16.19/katex.tar.gz
+  integrity: sha384-Emqt3uGpkl92fUadX/XMQwYvBAl72GgqacKwmAU0j5KvFIf3w2zg+UrOh9zktRfr
   dest:
     katex/*:
