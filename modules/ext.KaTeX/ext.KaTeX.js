@@ -13,6 +13,7 @@ mw.hook( 'wikipage.content' ).add( ( $content ) => {
 			trust: false,
 			throwOnError: false
 		};
-		this.outerHTML = katex.renderToString( this.textContent, katexOptions );
+		this.outerHTML = katex.renderToString( this.textContent, katexOptions )
+			.replaceAll("color:transparent;", "color:transparent;visibility:hidden;"); // https://github.com/KaTeX/KaTeX/issues/3668
 	} );
 } );
