@@ -1,6 +1,6 @@
 {
 	"name": "KaTeX",
-	"version": "0.9.4",
+	"version": "0.9.5",
 	"author": [
 		"tesinormed"
 	],
@@ -65,7 +65,7 @@
 	},
 	"ForeignResourcesDir": "resources",
 	"MessagesDirs": {
-		"SimpleMathJax": [
+		"KaTeX": [
 			"i18n"
 		]
 	},
