@@ -7,7 +7,8 @@ use MediaWiki\Config\ConfigFactory;
 use MediaWiki\Hook\ParserFirstCallInitHook;
 use MediaWiki\Html\Html;
 use MediaWiki\Parser\Parser;
-use PPFrame;
+use MediaWiki\Parser\PPFrame;
+use MediaWiki\Parser\Sanitizer;
 
 class Hooks implements ParserFirstCallInitHook {
 	private Config $extensionConfig;
@@ -55,17 +56,21 @@ class Hooks implements ParserFirstCallInitHook {
 		if ( array_key_exists( 'fleqn', $params ) ) {
 			$elementClasses[] = 'mw-KaTeX-fleqn';
 		}
+		$elementClasses = implode( ' ', $elementClasses );
+
+		$attribs = Sanitizer::validateTagAttributes( $params, element: 'span' );
+		if ( isset( $attribs['class'] ) ) {
+			$attribs['class'] = $elementClasses . ' ' . $attribs['class'];
+		} else {
+			$attribs['class'] = $elementClasses;
+		}
 
 		// outputted HTML
-		$element = Html::element(
-			'span',
-			[ 'class' => $elementClasses ],
-			// trim any whitespace around the actual TeX so we don't get errors
-			trim( $text )
-		);
-
 		// make sure this won't get mangled
-		return [ $element, 'markerType' => 'nowiki' ];
+		return [
+			Html::element( 'span', $attribs, trim( $text ) ),
+			'markerType' => 'nowiki'
+		];
 	}
 
 	public function renderChemistryTag( ?string $text, array $params, Parser $parser, PPFrame $frame ): string|array {
