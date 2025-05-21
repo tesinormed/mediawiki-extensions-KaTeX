@@ -8,7 +8,6 @@ use MediaWiki\Hook\ParserFirstCallInitHook;
 use MediaWiki\Html\Html;
 use MediaWiki\Parser\Parser;
 use MediaWiki\Parser\PPFrame;
-use MediaWiki\Parser\Sanitizer;
 
 class Hooks implements ParserFirstCallInitHook {
 	private Config $extensionConfig;
@@ -56,19 +55,11 @@ class Hooks implements ParserFirstCallInitHook {
 		if ( array_key_exists( 'fleqn', $params ) ) {
 			$elementClasses[] = 'mw-KaTeX-fleqn';
 		}
-		$elementClasses = implode( ' ', $elementClasses );
-
-		$attribs = Sanitizer::validateTagAttributes( $params, element: 'span' );
-		if ( isset( $attribs['class'] ) ) {
-			$attribs['class'] = $elementClasses . ' ' . $attribs['class'];
-		} else {
-			$attribs['class'] = $elementClasses;
-		}
 
 		// outputted HTML
-		// make sure this won't get mangled
 		return [
-			Html::element( 'span', $attribs, trim( $text ) ),
+			Html::element( 'span', [ 'class' => $elementClasses ], trim( $text ) ),
+			// make sure this won't get mangled
 			'markerType' => 'nowiki'
 		];
 	}
