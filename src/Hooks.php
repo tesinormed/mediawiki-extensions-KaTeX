@@ -36,7 +36,7 @@ class Hooks implements ParserFirstCallInitHook {
 	public function renderTag( ?string $text, array $params, Parser $parser, PPFrame $frame ): string|array {
 		if ( $text === null ) {
 			// nothing to render
-			return [ '', 'markerType' => 'nowiki' ];
+			return '';
 		}
 
 		// add KaTeX to the page
