@@ -49,10 +49,6 @@ __webpack_require__.d(__webpack_exports__, {
  * about where in the source string the problem occurred.
  */
 class ParseError extends Error {
-  // Error start position based on passed-in Token or ParseNode.
-
-  // Length of affected text based on passed-in Token or ParseNode.
-
   // The underlying error message without any context added.
 
   constructor(message,
@@ -97,6 +93,11 @@ class ParseError extends Error {
     }
     super(error);
     this.name = "ParseError";
+    this.position = void 0;
+    // Error start position based on passed-in Token or ParseNode.
+    this.length = void 0;
+    // Length of affected text based on passed-in Token or ParseNode.
+    this.rawMessage = void 0;
     Object.setPrototypeOf(this, ParseError.prototype);
     this.position = start;
     if (start != null && end != null) {
@@ -171,7 +172,6 @@ const protocolFromUrl = url => {
   // Check for possible leading protocol.
   // https://url.spec.whatwg.org/#url-parsing strips leading whitespace
   // (U+20) or C0 control (U+00-U+1F) characters.
-  // eslint-disable-next-line no-control-regex
   const protocol = /^[\x00-\x20]*([^\\/#?]*?)(:|&#0*58|&#x0*3a|&colon)/i.exec(url);
   if (!protocol) {
     return "_relative";
@@ -196,6 +196,13 @@ const protocolFromUrl = url => {
  */
 
 
+
+
+/**
+ * Union of all values that appear as schema defaults, cliDefaults, or
+ * cliProcessor return values.  StrictFunction / TrustFunction are
+ * option-value types, not default/schema values, so they are excluded.
+ */
 
 // TODO: automatically generate documentation
 // TODO: check all properties on Settings exist
@@ -290,16 +297,11 @@ const SETTINGS_SCHEMA = {
     cli: false
   }
 };
-function getDefaultValue(schema) {
-  if ("default" in schema) {
-    return schema.default;
+function getImplicitDefault(type) {
+  if (typeof type !== 'string') {
+    return type.enum[0];
   }
-  const type = schema.type;
-  const defaultType = Array.isArray(type) ? type[0] : type;
-  if (typeof defaultType !== 'string') {
-    return defaultType.enum[0];
-  }
-  switch (defaultType) {
+  switch (type) {
     case 'boolean':
       return false;
     case 'string':
@@ -308,7 +310,21 @@ function getDefaultValue(schema) {
       return 0;
     case 'object':
       return {};
+    default:
+      throw new Error("Unexpected schema type; settings must declare an explicit default.");
   }
+}
+function getDefaultValue(schema) {
+  if (Object.prototype.hasOwnProperty.call(schema, "default") && schema.default !== undefined) {
+    return schema.default;
+  }
+  const type = Array.isArray(schema.type) ? schema.type[0] : schema.type;
+  return getImplicitDefault(type);
+}
+function applySetting(target, prop, options, schema) {
+  const optionValue = Object.prototype.hasOwnProperty.call(options, prop) ? options[prop] : undefined;
+  const processor = Object.prototype.hasOwnProperty.call(schema, "processor") ? schema.processor : undefined;
+  target[prop] = optionValue !== undefined ? processor ? processor(optionValue) : optionValue : getDefaultValue(schema);
 }
 
 /**
@@ -326,13 +342,28 @@ class Settings {
     if (options === void 0) {
       options = {};
     }
+    this.displayMode = void 0;
+    this.output = void 0;
+    this.leqno = void 0;
+    this.fleqn = void 0;
+    this.throwOnError = void 0;
+    this.errorColor = void 0;
+    this.macros = void 0;
+    this.minRuleThickness = void 0;
+    this.colorIsTextColor = void 0;
+    this.strict = void 0;
+    this.trust = void 0;
+    this.maxSize = void 0;
+    this.maxExpand = void 0;
+    this.globalGroup = void 0;
     // allow null options
     options = options || {};
     for (const prop of Object.keys(SETTINGS_SCHEMA)) {
       const schema = SETTINGS_SCHEMA[prop];
-      const optionValue = options[prop];
-      // TODO: validate options
-      this[prop] = optionValue !== undefined ? schema.processor ? schema.processor(optionValue) : optionValue : getDefaultValue(schema);
+      if (schema) {
+        // TODO: validate options
+        applySetting(this, prop, options, schema);
+      }
     }
   }
 
@@ -429,6 +460,9 @@ class Settings {
  */
 class Style {
   constructor(id, size, cramped) {
+    this.id = void 0;
+    this.size = void 0;
+    this.cramped = void 0;
     this.id = id;
     this.size = size;
     this.cramped = cramped;
@@ -839,7 +873,7 @@ const path = {
 const tallDelim = function (label, midHeight) {
   switch (label) {
     case "lbrack":
-      return "M403 1759 V84 H666 V0 H319 V1759 v" + midHeight + " v1759 h347 v-84\nH403z M403 1759 V0 H319 V1759 v" + midHeight + " v1759 h84z";
+      return "M403 1759 V84 H666 V0 H319 V1759 v" + midHeight + " v1759 v84 h347 v-84\nH403z M403 1759 V0 H319 V1759 v" + midHeight + " v1759 v84 h84z";
     case "rbrack":
       return "M347 1759 V0 H0 V84 H263 V1759 v" + midHeight + " v1759 H0 v84 H347z\nM347 1759 V0 H263 V1759 v" + midHeight + " v1759 h84z";
     case "vert":
@@ -866,6 +900,10 @@ const tallDelim = function (label, midHeight) {
 ;// ./src/tree.ts
 // To ensure that all nodes have compatible signatures for these methods.
 
+function isMathDomNode(node) {
+  return 'toText' in node;
+}
+
 /**
  * This node represents a document fragment, which contains elements, but when
  * placed into the DOM doesn't have any representation itself. It only contains
@@ -875,6 +913,12 @@ class DocumentFragment {
   // Never used; needed for satisfying interface.
 
   constructor(children) {
+    this.children = void 0;
+    this.classes = void 0;
+    this.height = void 0;
+    this.depth = void 0;
+    this.maxFontSize = void 0;
+    this.style = void 0;
     this.children = children;
     this.classes = [];
     this.height = 0;
@@ -911,11 +955,12 @@ class DocumentFragment {
    * MathDomNode's only.
    */
   toText() {
-    // To avoid this, we would subclass documentFragment separately for
-    // MathML, but polyfills for subclassing is expensive per PR 1469.
-    // TODO(ts): Only works for ChildType = MathDomNode.
-    const toText = child => child.toText();
-    return this.children.map(toText).join("");
+    return this.children.map(child => {
+      if (isMathDomNode(child)) {
+        return child.toText();
+      }
+      throw new Error("Expected MathDomNode with toText, got " + child.constructor.name);
+    }).join("");
   }
 }
 ;// ./src/units.ts
@@ -964,6 +1009,7 @@ const relativeUnit = {
   "em": true,
   "mu": true
 };
+
 /**
  * Determine whether the specified unit (either a string defining the unit
  * or a "size" parse node containing a unit field) is valid.
@@ -1054,6 +1100,21 @@ const makeEm = function (n) {
 const createClass = function (classes) {
   return classes.filter(cls => cls).join(" ");
 };
+
+/**
+ * Serialize a CssStyle object into a semicolon-delimited inline-style string
+ * (hyphenating camelCase property names). Returns "" when no property is set.
+ */
+const cssStyleToString = function (style) {
+  let styles = "";
+  for (const key of Object.keys(style)) {
+    const value = style[key];
+    if (value !== undefined) {
+      styles += hyphenate(key) + ":" + value + ";";
+    }
+  }
+  return styles;
+};
 const initNode = function (classes, options, style) {
   this.classes = classes || [];
   this.attributes = {};
@@ -1082,9 +1143,7 @@ const toNode = function (tagName) {
   node.className = createClass(this.classes);
 
   // Apply inline styles
-  for (const key of Object.keys(this.style)) {
-    node.style[key] = this.style[key];
-  }
+  Object.assign(node.style, this.style);
 
   // Apply attributes
   for (const attr of Object.keys(this.attributes)) {
@@ -1118,12 +1177,7 @@ const toMarkup = function (tagName) {
   if (this.classes.length) {
     markup += " class=\"" + utils_escape(createClass(this.classes)) + "\"";
   }
-  let styles = "";
-
-  // Add the styles, after hyphenation
-  for (const key of Object.keys(this.style)) {
-    styles += hyphenate(key) + ":" + this.style[key] + ";";
-  }
+  const styles = cssStyleToString(this.style);
   if (styles) {
     markup += " style=\"" + utils_escape(styles) + "\"";
   }
@@ -1168,6 +1222,20 @@ const toMarkup = function (tagName) {
  */
 class Span {
   constructor(classes, children, options, style) {
+    this.children = void 0;
+    this.attributes = void 0;
+    this.classes = void 0;
+    this.height = void 0;
+    this.depth = void 0;
+    this.width = void 0;
+    this.maxFontSize = void 0;
+    this.style = void 0;
+    /**
+     * Italic correction carried over from a SymbolNode when the symbol is
+     * wrapped in a vlist (e.g. \oiint / \oiiint).  Read by supsub to adjust
+     * subscript positioning.  Only set when nonzero; use `?? 0` at read sites.
+     */
+    this.italic = void 0;
     initNode.call(this, classes, options, style);
     this.children = children || [];
   }
@@ -1197,6 +1265,13 @@ class Span {
  */
 class Anchor {
   constructor(href, classes, children, options) {
+    this.children = void 0;
+    this.attributes = void 0;
+    this.classes = void 0;
+    this.height = void 0;
+    this.depth = void 0;
+    this.maxFontSize = void 0;
+    this.style = void 0;
     initNode.call(this, classes, options);
     this.children = children || [];
     this.setAttribute('href', href);
@@ -1220,6 +1295,13 @@ class Anchor {
  */
 class Img {
   constructor(src, alt, style) {
+    this.src = void 0;
+    this.alt = void 0;
+    this.classes = void 0;
+    this.height = void 0;
+    this.depth = void 0;
+    this.maxFontSize = void 0;
+    this.style = void 0;
     this.alt = alt;
     this.src = src;
     this.classes = ["mord"];
@@ -1238,19 +1320,12 @@ class Img {
     node.className = "mord";
 
     // Apply inline styles
-    for (const key of Object.keys(this.style)) {
-      node.style[key] = this.style[key];
-    }
+    Object.assign(node.style, this.style);
     return node;
   }
   toMarkup() {
     let markup = "<img src=\"" + utils_escape(this.src) + "\"" + (" alt=\"" + utils_escape(this.alt) + "\"");
-
-    // Add the styles, after hyphenation
-    let styles = "";
-    for (const key of Object.keys(this.style)) {
-      styles += hyphenate(key) + ":" + this.style[key] + ";";
-    }
+    const styles = cssStyleToString(this.style);
     if (styles) {
       markup += " style=\"" + utils_escape(styles) + "\"";
     }
@@ -1273,6 +1348,15 @@ const iCombinations = {
  */
 class SymbolNode {
   constructor(text, height, depth, italic, skew, width, classes, style) {
+    this.text = void 0;
+    this.height = void 0;
+    this.depth = void 0;
+    this.italic = void 0;
+    this.skew = void 0;
+    this.width = void 0;
+    this.maxFontSize = void 0;
+    this.classes = void 0;
+    this.style = void 0;
     this.text = text;
     this.height = height || 0;
     this.depth = depth || 0;
@@ -1318,9 +1402,9 @@ class SymbolNode {
       span = span || document.createElement("span");
       span.className = createClass(this.classes);
     }
-    for (const key of Object.keys(this.style)) {
+    if (Object.keys(this.style).length > 0) {
       span = span || document.createElement("span");
-      span.style[key] = this.style[key];
+      Object.assign(span.style, this.style);
     }
     if (span) {
       span.appendChild(node);
@@ -1348,9 +1432,7 @@ class SymbolNode {
     if (this.italic > 0) {
       styles += "margin-right:" + makeEm(this.italic) + ";";
     }
-    for (const key of Object.keys(this.style)) {
-      styles += hyphenate(key) + ":" + this.style[key] + ";";
-    }
+    styles += cssStyleToString(this.style);
     if (styles) {
       needsSpan = true;
       markup += " style=\"" + utils_escape(styles) + "\"";
@@ -1372,6 +1454,8 @@ class SymbolNode {
  */
 class SvgNode {
   constructor(children, attributes) {
+    this.children = void 0;
+    this.attributes = void 0;
     this.children = children || [];
     this.attributes = attributes || {};
   }
@@ -1405,6 +1489,8 @@ class SvgNode {
 }
 class PathNode {
   constructor(pathName, alternate) {
+    this.pathName = void 0;
+    this.alternate = void 0;
     this.pathName = pathName;
     this.alternate = alternate; // Used only for \sqrt, \phase, & tall delims
   }
@@ -1428,6 +1514,7 @@ class PathNode {
 }
 class LineNode {
   constructor(attributes) {
+    this.attributes = void 0;
     this.attributes = attributes || {};
   }
   toNode() {
@@ -3551,6 +3638,12 @@ const hasHtmlDomChildren = node => node instanceof Span || node instanceof Ancho
 });
 ;// ./src/fontMetrics.ts
 
+// This map contains a mapping from font name and character code to character
+// metrics, including height, depth, italic correction, and skew (kern from the
+// character to the corresponding \skewchar)
+// This map is generated via `make metrics`. It should not be changed manually.
+
+
 /**
  * This file contains metrics regarding fonts and individual symbols. The sigma
  * and xi variables, as well as the metricMap map contain data extracted from
@@ -3665,12 +3758,6 @@ const sigmasAndXis = {
   fboxrule: [0.04, 0.04, 0.04] // 0.4 pt / ptPerEm
 };
 
-// This map contains a mapping from font name and character code to character
-// metrics, including height, depth, italic correction, and skew (kern from the
-// character to the corresponding \skewchar)
-// This map is generated via `make metrics`. It should not be changed manually.
-
-
 // These are very rough approximations.  We default to Times New Roman which
 // should have Latin-1 and Cyrillic characters, but may not depending on the
 // operating system.  The metrics do not account for extra height from the
@@ -3752,6 +3839,7 @@ const extraCharacterMap = {
   'ю': 'm',
   'я': 'r'
 };
+
 /**
  * This function adds new font metrics to default metricMap
  * It can also override existing metrics
@@ -3818,10 +3906,8 @@ function getGlobalMetrics(size) {
     const metrics = fontMetricsBySizeIndex[sizeIndex] = {
       cssEmPerMu: sigmasAndXis.quad[sizeIndex] / 18
     };
-    for (const key in sigmasAndXis) {
-      if (sigmasAndXis.hasOwnProperty(key)) {
-        metrics[key] = sigmasAndXis[key][sizeIndex];
-      }
+    for (const key of Object.keys(sigmasAndXis)) {
+      metrics[key] = sigmasAndXis[key][sizeIndex];
     }
   }
   return fontMetricsBySizeIndex[sizeIndex];
@@ -3849,21 +3935,7 @@ function getGlobalMetrics(size) {
 // types for raw text tokens, and we want to avoid conflicts with higher-level
 // `ParseNode` types. These `ParseNode`s are constructed within `Parser` by
 // looking up the `symbols` map.
-const ATOMS = {
-  "bin": 1,
-  "close": 1,
-  "inner": 1,
-  "open": 1,
-  "punct": 1,
-  "rel": 1
-};
-const NON_ATOMS = {
-  "accent-token": 1,
-  "mathord": 1,
-  "op-token": 1,
-  "spacing": 1,
-  "textord": 1
-};
+
 const symbols = {
   "math": {},
   "text": {}
@@ -4409,8 +4481,8 @@ defineSymbol(symbols_text, main, spacing, "\u00a0", "\\ ");
 defineSymbol(symbols_text, main, spacing, "\u00a0", " ");
 defineSymbol(symbols_text, main, spacing, "\u00a0", "\\space");
 defineSymbol(symbols_text, main, spacing, "\u00a0", "\\nobreakspace");
-defineSymbol(math, main, spacing, null, "\\nobreak");
-defineSymbol(math, main, spacing, null, "\\allowbreak");
+defineSymbol(math, main, spacing, "", "\\nobreak");
+defineSymbol(math, main, spacing, "", "\\allowbreak");
 defineSymbol(math, main, punct, ",", ",");
 defineSymbol(math, main, punct, ";", ";");
 defineSymbol(math, ams, bin, "\u22bc", "\\barwedge", true);
@@ -4612,7 +4684,7 @@ defineSymbol(symbols_text, main, mathord, "h", "\u210E");
 // Mathematical Alphanumeric Symbols.
 // Some editors do not deal well with wide characters. So don't write the
 // string into this file. Instead, create the string from the surrogate pair.
-let wideChar = "";
+let wideChar;
 for (let i = 0; i < letters.length; i++) {
   const ch = letters.charAt(i);
 
@@ -4701,116 +4773,136 @@ for (let i = 0; i < extraLatin.length; i++) {
  */
 
 
+const boldUpright = {
+  mathClass: "mathbf",
+  textClass: "textbf",
+  font: "Main-Bold"
+};
+const italic = {
+  mathClass: "mathnormal",
+  textClass: "textit",
+  font: "Math-Italic"
+};
+const boldItalic = {
+  mathClass: "boldsymbol",
+  textClass: "boldsymbol",
+  font: "Main-BoldItalic"
+};
+const script = {
+  mathClass: "mathscr",
+  textClass: "textscr",
+  font: "Script-Regular"
+};
+const noFont = {
+  mathClass: "",
+  textClass: "",
+  font: ""
+};
+const fraktur = {
+  mathClass: "mathfrak",
+  textClass: "textfrak",
+  font: "Fraktur-Regular"
+};
+const doubleStruck = {
+  mathClass: "mathbb",
+  textClass: "textbb",
+  font: "AMS-Regular"
+};
+const boldFraktur = {
+  mathClass: "mathboldfrak",
+  textClass: "textboldfrak",
+  font: "Fraktur-Regular"
+};
+const sansSerif = {
+  mathClass: "mathsf",
+  textClass: "textsf",
+  font: "SansSerif-Regular"
+};
+const boldSansSerif = {
+  mathClass: "mathboldsf",
+  textClass: "textboldsf",
+  font: "SansSerif-Bold"
+};
+const italicSansSerif = {
+  mathClass: "mathitsf",
+  textClass: "textitsf",
+  font: "SansSerif-Italic"
+};
+const monospace = {
+  mathClass: "mathtt",
+  textClass: "texttt",
+  font: "Typewriter-Regular"
+};
 
 /**
  * Data below is from https://www.unicode.org/charts/PDF/U1D400.pdf
  * That document sorts characters into groups by font type, say bold or italic.
  *
- * In the arrays below, each subarray consists three elements:
+ * In the arrays below, each object consists of three properties:
  *      * The CSS class of that group when in math mode.
  *      * The CSS class of that group when in text mode.
  *      * The font name, so that KaTeX can get font metrics.
  */
 
-const wideLatinLetterData = [["mathbf", "textbf", "Main-Bold"],
-// A-Z bold upright
-["mathbf", "textbf", "Main-Bold"],
-// a-z bold upright
-
-["mathnormal", "textit", "Math-Italic"],
-// A-Z italic
-["mathnormal", "textit", "Math-Italic"],
-// a-z italic
-
-["boldsymbol", "boldsymbol", "Main-BoldItalic"],
-// A-Z bold italic
-["boldsymbol", "boldsymbol", "Main-BoldItalic"],
-// a-z bold italic
-
+const wideLatinLetterData = [boldUpright, boldUpright,
+// A-Z, a-z
+italic, italic,
+// A-Z, a-z
+boldItalic, boldItalic,
+// A-Z, a-z
 // Map fancy A-Z letters to script, not calligraphic.
 // This aligns with unicode-math and math fonts (except Cambria Math).
-["mathscr", "textscr", "Script-Regular"],
-// A-Z script
-["", "", ""],
-// a-z script.  No font
-
-["", "", ""],
-// A-Z bold script. No font
-["", "", ""],
-// a-z bold script. No font
-
-["mathfrak", "textfrak", "Fraktur-Regular"],
-// A-Z Fraktur
-["mathfrak", "textfrak", "Fraktur-Regular"],
-// a-z Fraktur
-
-["mathbb", "textbb", "AMS-Regular"],
-// A-Z double-struck
-["mathbb", "textbb", "AMS-Regular"],
-// k double-struck
-
+script, noFont,
+// A-Z script, a-z — no font
+noFont, noFont,
+// A-Z bold script, a-z bold script — no font
+fraktur, fraktur,
+// A-Z, a-z
+doubleStruck, doubleStruck,
+// A-Z double-struck, k double-struck
 // Note that we are using a bold font, but font metrics for regular Fraktur.
-["mathboldfrak", "textboldfrak", "Fraktur-Regular"],
-// A-Z bold Fraktur
-["mathboldfrak", "textboldfrak", "Fraktur-Regular"],
-// a-z bold Fraktur
-
-["mathsf", "textsf", "SansSerif-Regular"],
-// A-Z sans-serif
-["mathsf", "textsf", "SansSerif-Regular"],
-// a-z sans-serif
-
-["mathboldsf", "textboldsf", "SansSerif-Bold"],
-// A-Z bold sans-serif
-["mathboldsf", "textboldsf", "SansSerif-Bold"],
-// a-z bold sans-serif
-
-["mathitsf", "textitsf", "SansSerif-Italic"],
-// A-Z italic sans-serif
-["mathitsf", "textitsf", "SansSerif-Italic"],
-// a-z italic sans-serif
-
-["", "", ""],
-// A-Z bold italic sans. No font
-["", "", ""],
-// a-z bold italic sans. No font
-
-["mathtt", "texttt", "Typewriter-Regular"],
-// A-Z monospace
-["mathtt", "texttt", "Typewriter-Regular"] // a-z monospace
+boldFraktur, boldFraktur,
+// A-Z, a-z
+sansSerif, sansSerif,
+// A-Z, a-z
+boldSansSerif, boldSansSerif,
+// A-Z, a-z
+italicSansSerif, italicSansSerif,
+// A-Z, a-z
+noFont, noFont,
+// A-Z bold italic sans, a-z bold italic sans - no font
+monospace, monospace // A-Z, a-z
 ];
-const wideNumeralData = [["mathbf", "textbf", "Main-Bold"],
-// 0-9 bold
-["", "", ""],
+const wideNumeralData = [boldUpright,
+// 0-9
+noFont,
 // 0-9 double-struck. No KaTeX font.
-["mathsf", "textsf", "SansSerif-Regular"],
-// 0-9 sans-serif
-["mathboldsf", "textboldsf", "SansSerif-Bold"],
-// 0-9 bold sans-serif
-["mathtt", "texttt", "Typewriter-Regular"] // 0-9 monospace
+sansSerif,
+// 0-9
+boldSansSerif,
+// 0-9
+monospace // 0-9
 ];
-const wideCharacterFont = (wideChar, mode) => {
+const wideCharacterFont = wideChar => {
   // IE doesn't support codePointAt(). So work with the surrogate pair.
   const H = wideChar.charCodeAt(0); // high surrogate
   const L = wideChar.charCodeAt(1); // low surrogate
   const codePoint = (H - 0xD800) * 0x400 + (L - 0xDC00) + 0x10000;
-  const j = mode === "math" ? 0 : 1; // column index for CSS class.
-
   if (0x1D400 <= codePoint && codePoint < 0x1D6A4) {
     // wideLatinLetterData contains exactly 26 chars on each row.
     // So we can calculate the relevant row. No traverse necessary.
     const i = Math.floor((codePoint - 0x1D400) / 26);
-    return [wideLatinLetterData[i][2], wideLatinLetterData[i][j]];
+    return wideLatinLetterData[i];
   } else if (0x1D7CE <= codePoint && codePoint <= 0x1D7FF) {
     // Numerals, ten per row.
     const i = Math.floor((codePoint - 0x1D7CE) / 10);
-    return [wideNumeralData[i][2], wideNumeralData[i][j]];
+    return wideNumeralData[i];
   } else if (codePoint === 0x1D6A5 || codePoint === 0x1D6A6) {
     // dotless i or j
-    return [wideLatinLetterData[0][2], wideLatinLetterData[0][j]];
+    return wideLatinLetterData[0];
   } else if (0x1D6A6 < codePoint && codePoint < 0x1D7CE) {
     // Greek letters. Not supported, yet.
-    return ["", ""];
+    return noFont;
   } else {
     // We don't support any wide characters outside 1D400–1D7FF.
     throw new src_ParseError("Unsupported character: " + wideChar);
@@ -4833,9 +4925,7 @@ const wideCharacterFont = (wideChar, mode) => {
  * Looks up the given symbol in fontMetrics, after applying any symbol
  * replacements defined in symbol.js
  */
-const lookupSymbol = function (value,
-// TODO(#963): Use a union type for this.
-fontName, mode) {
+const lookupSymbol = function (value, fontName, mode) {
   // Replace the value with its replaced value from symbol.js
   if (src_symbols[mode][value]) {
     const replacement = src_symbols[mode][value].replace;
@@ -4918,7 +5008,7 @@ const mathsym = function (value, mode, options, classes) {
  * depending on the symbol.  Use this function instead of fontMap for font
  * "boldsymbol".
  */
-const boldsymbol = function (value, mode, options, classes, type) {
+const boldSymbol = function (value, mode, type) {
   if (type !== "textord" && lookupSymbol(value, "Math-BoldItalic", mode).metrics) {
     return {
       fontName: "Math-BoldItalic",
@@ -4937,39 +5027,47 @@ const boldsymbol = function (value, mode, options, classes, type) {
 /**
  * Makes either a mathord or textord in the correct font and color.
  */
-const makeOrd = function (group, options, type) {
+const makeOrd = function (group, options) {
+  // Spacing nodes are rendered as textord.
+  const type = group.type === "mathord" ? "mathord" : "textord";
   const mode = group.mode;
   const text = group.text;
   const classes = ["mord"];
+  const font = options.font,
+    fontFamily = options.fontFamily,
+    fontWeight = options.fontWeight,
+    fontShape = options.fontShape;
 
   // Math mode or Old font (i.e. \rm)
-  const isFont = mode === "math" || mode === "text" && options.font;
-  const fontOrFamily = isFont ? options.font : options.fontFamily;
+  const useFont = mode === "math" || mode === "text" && !!font;
+  const fontOrFamily = useFont ? font : fontFamily;
   let wideFontName = "";
   let wideFontClass = "";
   if (text.charCodeAt(0) === 0xD835) {
-    [wideFontName, wideFontClass] = wideCharacterFont(text, mode);
+    const wideCharData = wideCharacterFont(text);
+    wideFontName = wideCharData.font;
+    wideFontClass = wideCharData[mode + "Class"];
   }
-  if (wideFontName.length > 0) {
+  if (wideFontName) {
     // surrogate pairs get special treatment
     return makeSymbol(text, wideFontName, mode, options, classes.concat(wideFontClass));
   } else if (fontOrFamily) {
     let fontName;
     let fontClasses;
     if (fontOrFamily === "boldsymbol") {
-      const fontData = boldsymbol(text, mode, options, classes, type);
+      const fontData = boldSymbol(text, mode, type);
       fontName = fontData.fontName;
       fontClasses = [fontData.fontClass];
-    } else if (isFont) {
-      fontName = fontMap[fontOrFamily].fontName;
-      fontClasses = [fontOrFamily];
+    } else if (useFont) {
+      fontName = fontMap[font].fontName;
+      fontClasses = [font];
     } else {
-      fontName = retrieveTextFontName(fontOrFamily, options.fontWeight, options.fontShape);
-      fontClasses = [fontOrFamily, options.fontWeight, options.fontShape];
+      fontName = retrieveTextFontName(fontFamily, fontWeight, fontShape);
+      fontClasses = [fontFamily, fontWeight, fontShape];
     }
     if (lookupSymbol(text, fontName, mode).metrics) {
       return makeSymbol(text, fontName, mode, options, classes.concat(fontClasses));
-    } else if (ligatures.hasOwnProperty(text) && fontName.slice(0, 10) === "Typewriter") {
+    } else if (Object.prototype.hasOwnProperty.call(ligatures, text) && fontName.slice(0, 10) === "Typewriter") {
       // Deconstruct ligatures in monospace fonts (\texttt, \tt).
       const parts = [];
       for (let i = 0; i < text.length; i++) {
@@ -4985,16 +5083,16 @@ const makeOrd = function (group, options, type) {
   } else if (type === "textord") {
     const font = src_symbols[mode][text] && src_symbols[mode][text].font;
     if (font === "ams") {
-      const fontName = retrieveTextFontName("amsrm", options.fontWeight, options.fontShape);
-      return makeSymbol(text, fontName, mode, options, classes.concat("amsrm", options.fontWeight, options.fontShape));
+      const fontName = retrieveTextFontName("amsrm", fontWeight, fontShape);
+      return makeSymbol(text, fontName, mode, options, classes.concat("amsrm", fontWeight, fontShape));
     } else if (font === "main" || !font) {
-      const fontName = retrieveTextFontName("textrm", options.fontWeight, options.fontShape);
-      return makeSymbol(text, fontName, mode, options, classes.concat(options.fontWeight, options.fontShape));
+      const fontName = retrieveTextFontName("textrm", fontWeight, fontShape);
+      return makeSymbol(text, fontName, mode, options, classes.concat(fontWeight, fontShape));
     } else {
       // fonts added by plugins
-      const fontName = retrieveTextFontName(font, options.fontWeight, options.fontShape);
+      const fontName = retrieveTextFontName(font, fontWeight, fontShape);
       // We add font name as a css class
-      return makeSymbol(text, fontName, mode, options, classes.concat(fontName, options.fontWeight, options.fontShape));
+      return makeSymbol(text, fontName, mode, options, classes.concat(fontName, fontWeight, fontShape));
     }
   } else {
     throw new Error("unexpected type: " + type + " in makeOrd");
@@ -5204,10 +5302,9 @@ const getVListChildrenAndDepth = function (params) {
  * See VListParam documentation above.
  */
 const makeVList = function (params, options) {
-  const {
-    children,
-    depth
-  } = getVListChildrenAndDepth(params);
+  const _getVListChildrenAndD = getVListChildrenAndDepth(params),
+    children = _getVListChildrenAndD.children,
+    depth = _getVListChildrenAndD.depth;
 
   // Create a strut that is taller than any list item. The strut is added to
   // each item, where it will determine the item's baseline. Since it has
@@ -5302,8 +5399,9 @@ const makeGlue = (measurement, options) => {
 };
 
 // Takes font options, and returns the appropriate fontLookup name
-const retrieveTextFontName = function (fontFamily, fontWeight, fontShape) {
-  let baseFontName = "";
+const retrieveTextFontName = (fontFamily, fontWeight, fontShape) => {
+  let baseFontName;
+  let fontStylesName;
   switch (fontFamily) {
     case "amsrm":
       baseFontName = "AMS";
@@ -5321,12 +5419,11 @@ const retrieveTextFontName = function (fontFamily, fontWeight, fontShape) {
       baseFontName = fontFamily;
     // use fonts added by a plugin
   }
-  let fontStylesName;
   if (fontWeight === "textbf" && fontShape === "textit") {
     fontStylesName = "BoldItalic";
   } else if (fontWeight === "textbf") {
     fontStylesName = "Bold";
-  } else if (fontWeight === "textit") {
+  } else if (fontShape === "textit") {
     fontStylesName = "Italic";
   } else {
     fontStylesName = "Regular";
@@ -5408,7 +5505,10 @@ const svgData = {
 };
 const staticSvg = function (value, options) {
   // Create a span with inline SVG for the element.
-  const [pathName, width, height] = svgData[value];
+  const _svgData$value = svgData[value],
+    pathName = _svgData$value[0],
+    width = _svgData$value[1],
+    height = _svgData$value[2];
   const path = new PathNode(pathName);
   const svgNode = new SvgNode([path], {
     "width": makeEm(width),
@@ -5418,7 +5518,7 @@ const staticSvg = function (value, options) {
     "viewBox": "0 0 " + 1000 * width + " " + 1000 * height,
     "preserveAspectRatio": "xMinYMin"
   });
-  const span = makeSvgSpan(["overlay"], [svgNode], options);
+  const span = makeSvgSpan(["katex-overlay"], [svgNode], options);
   span.height = height;
   span.style.height = makeEm(height);
   span.style.width = makeEm(width);
@@ -5532,11 +5632,19 @@ const tightSpacings = {
 // delegates its HTML building to the HtmlBuilder corresponding to these nodes.
 
 /**
- * Final function spec for use at parse time.
- * This is almost identical to `FunctionPropSpec`, except it
- * 1. includes the function handler, and
- * 2. requires all arguments except argTypes.
- * It is generated by `defineFunction()` below.
+ * Parser-facing function spec.  Optional properties should use the defaults
+ * documented below.
+ */
+
+/**
+ * Builder fields consumed during registration.  These are stored separately in
+ * `_htmlGroupBuilders` and `_mathmlGroupBuilders`, and are not used by Parser.
+ */
+
+/**
+ * Full registration spec passed to `defineFunction`.  It combines the
+ * parser-facing fields with optional builder fields and the names being
+ * registered.
  */
 
 /**
@@ -5549,37 +5657,30 @@ const _functions = {};
 /**
  * All HTML builders. Should be only used in the `define*` and the `build*ML`
  * functions.
+ *
+ * Builders for different node types are stored side by side, but
+ * `HtmlBuilder<T>` is contravariant in `T`, so there is no single type
+ * argument that makes storing/retrieving them typecheck.  `any` is used
+ * as an existential-quantifier escape hatch.
  */
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
 const _htmlGroupBuilders = {};
 
 /**
  * All MathML builders. Should be only used in the `define*` and the `build*ML`
- * functions.
+ * functions.  See `_htmlGroupBuilders` above for the rationale behind `any`.
  */
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
 const _mathmlGroupBuilders = {};
-function defineFunction(_ref) {
-  let {
-    type,
-    names,
-    props,
-    handler,
-    htmlBuilder,
-    mathmlBuilder
-  } = _ref;
-  // Set default values of functions
-  const data = {
-    type,
-    numArgs: props.numArgs,
-    argTypes: props.argTypes,
-    allowedInArgument: !!props.allowedInArgument,
-    allowedInText: !!props.allowedInText,
-    allowedInMath: props.allowedInMath === undefined ? true : props.allowedInMath,
-    numOptionalArgs: props.numOptionalArgs || 0,
-    infix: !!props.infix,
-    primitive: !!props.primitive,
-    handler
-  };
+function defineFunction(data) {
+  const type = data.type,
+    names = data.names,
+    htmlBuilder = data.htmlBuilder,
+    mathmlBuilder = data.mathmlBuilder;
   for (let i = 0; i < names.length; ++i) {
+    // To avoid destructuring and rebuilding an object,
+    // we store the entire FunctionDefSpec object,
+    // even though Parser only needs the FunctionSpec fields.
     _functions[names[i]] = data;
   }
   if (type) {
@@ -5597,24 +5698,16 @@ function defineFunction(_ref) {
  * if the function's ParseNode is generated in Parser.js rather than via a
  * stand-alone handler provided to `defineFunction`).
  */
-function defineFunctionBuilders(_ref2) {
-  let {
-    type,
-    htmlBuilder,
-    mathmlBuilder
-  } = _ref2;
-  defineFunction({
-    type,
-    names: [],
-    props: {
-      numArgs: 0
-    },
-    handler() {
-      throw new Error('Should never be called.');
-    },
-    htmlBuilder,
-    mathmlBuilder
-  });
+function defineFunctionBuilders(_ref) {
+  let type = _ref.type,
+    htmlBuilder = _ref.htmlBuilder,
+    mathmlBuilder = _ref.mathmlBuilder;
+  if (htmlBuilder) {
+    _htmlGroupBuilders[type] = htmlBuilder;
+  }
+  if (mathmlBuilder) {
+    _mathmlGroupBuilders[type] = mathmlBuilder;
+  }
 }
 const normalizeArgument = function (arg) {
   return arg.type === "ordgroup" && arg.body.length === 1 ? arg.body[0] : arg;
@@ -5761,7 +5854,8 @@ const traverseNonSpaceNodes = function (nodes, callback, prev, next, isRoot) {
     const partialGroup = checkPartialGroup(node);
     if (partialGroup) {
       // Recursive DFS
-      // TODO(ts): make nodes a $ReadOnlyArray by returning a new array
+      // TODO(ts): partialGroup.children is ReadonlyArray but this
+      // function mutates the array (insertAfter splices into it).
       traverseNonSpaceNodes(partialGroup.children, callback, prev, null, isRoot);
       continue;
     }
@@ -5783,7 +5877,7 @@ const traverseNonSpaceNodes = function (nodes, callback, prev, next, isRoot) {
     }
     if (nonspace) {
       prev.node = node;
-    } else if (isRoot && node.hasClass("newline")) {
+    } else if (isRoot && node.hasClass("katex-newline")) {
       prev.node = makeSpan(["leftmost"]); // treat like beginning of line
     }
     prev.insertAfter = (index => n => {
@@ -5849,8 +5943,8 @@ const buildGroup = function (group, options, baseOptions) {
     return makeSpan();
   }
   if (_htmlGroupBuilders[group.type]) {
-    // Call the groupBuilders function
-    // TODO(ts)
+    // TODO(ts): groupBuilders is Record<string, HtmlBuilder<any>>;
+    // a type-safe registry would need a mapped type keyed by NodeType.
     let groupNode = _htmlGroupBuilders[group.type](group, options);
 
     // If the size changed between the parent and the current group, account
@@ -5869,18 +5963,18 @@ const buildGroup = function (group, options, baseOptions) {
 
 /**
  * Combine an array of HTML DOM nodes (e.g., the output of `buildExpression`)
- * into an unbreakable HTML node of class .base, with proper struts to
+ * into an unbreakable HTML node of class .katex-base, with proper struts to
  * guarantee correct vertical extent.  `buildHTML` calls this repeatedly to
  * make up the entire expression as a sequence of unbreakable units.
  */
 function buildHTMLUnbreakable(children, options) {
   // Compute height and depth of this chunk.
-  const body = makeSpan(["base"], children, options);
+  const body = makeSpan(["katex-base"], children, options);
 
   // Add strut, which ensures that the top of the HTML element falls at
   // the height of the expression, and the bottom of the HTML element
   // falls at the depth of the expression.
-  const strut = makeSpan(["strut"]);
+  const strut = makeSpan(["katex-strut"]);
   strut.style.height = makeEm(body.height + body.depth);
   if (body.depth) {
     strut.style.verticalAlign = makeEm(-body.depth);
@@ -5904,7 +5998,7 @@ function buildHTML(tree, options) {
   // Build the expression contained in the tree
   const expression = buildExpression(tree, options, "root");
   let eqnNum;
-  if (expression.length === 2 && expression[1].hasClass("tag")) {
+  if (expression.length === 2 && expression[1].hasClass("katex-tag")) {
     // An environment with automatic equation numbers, e.g. {gather}.
     eqnNum = expression.pop();
   }
@@ -5924,7 +6018,7 @@ function buildHTML(tree, options) {
       // Put any post-operator glue on same line as operator.
       // Watch for \nobreak along the way, and stop at \newline.
       let nobreak = false;
-      while (i < expression.length - 1 && expression[i + 1].hasClass("mspace") && !expression[i + 1].hasClass("newline")) {
+      while (i < expression.length - 1 && expression[i + 1].hasClass("mspace") && !expression[i + 1].hasClass("katex-newline")) {
         i++;
         parts.push(expression[i]);
         if (expression[i].hasClass("nobreak")) {
@@ -5936,7 +6030,7 @@ function buildHTML(tree, options) {
         children.push(buildHTMLUnbreakable(parts, options));
         parts = [];
       }
-    } else if (expression[i].hasClass("newline")) {
+    } else if (expression[i].hasClass("katex-newline")) {
       // Write the line except the newline
       parts.pop();
       if (parts.length > 0) {
@@ -5955,7 +6049,7 @@ function buildHTML(tree, options) {
   let tagChild;
   if (tag) {
     tagChild = buildHTMLUnbreakable(buildExpression(tag, options, true), options);
-    tagChild.classes = ["tag"];
+    tagChild.classes = ["katex-tag"];
     children.push(tagChild);
   } else if (eqnNum) {
     children.push(eqnNum);
@@ -6006,6 +6100,10 @@ function newDocumentFragment(children) {
  */
 class MathNode {
   constructor(type, children, classes) {
+    this.type = void 0;
+    this.attributes = void 0;
+    this.children = void 0;
+    this.classes = void 0;
     this.type = type;
     this.attributes = {};
     this.children = children || [];
@@ -6032,10 +6130,10 @@ class MathNode {
    */
   toNode() {
     const node = document.createElementNS("http://www.w3.org/1998/Math/MathML", this.type);
-    for (const attr in this.attributes) {
-      if (Object.prototype.hasOwnProperty.call(this.attributes, attr)) {
-        node.setAttribute(attr, this.attributes[attr]);
-      }
+    for (const _ref of Object.entries(this.attributes)) {
+      const attr = _ref[0];
+      const value = _ref[1];
+      node.setAttribute(attr, value);
     }
     if (this.classes.length > 0) {
       node.className = createClass(this.classes);
@@ -6063,12 +6161,12 @@ class MathNode {
     let markup = "<" + this.type;
 
     // Add the attributes
-    for (const attr in this.attributes) {
-      if (Object.prototype.hasOwnProperty.call(this.attributes, attr)) {
-        markup += " " + attr + "=\"";
-        markup += utils_escape(this.attributes[attr]);
-        markup += "\"";
-      }
+    for (const _ref2 of Object.entries(this.attributes)) {
+      const attr = _ref2[0];
+      const value = _ref2[1];
+      markup += " " + attr + "=\"";
+      markup += utils_escape(value);
+      markup += "\"";
     }
     if (this.classes.length > 0) {
       markup += " class =\"" + utils_escape(createClass(this.classes)) + "\"";
@@ -6094,6 +6192,7 @@ class MathNode {
  */
 class TextNode {
   constructor(text) {
+    this.text = void 0;
     this.text = text;
   }
 
@@ -6130,6 +6229,8 @@ class SpaceNode {
    * Create a Space node with width given in CSS ems.
    */
   constructor(width) {
+    this.width = void 0;
+    this.character = void 0;
     this.width = width;
     // See https://www.w3.org/TR/2000/WD-MathML2-20000328/chapter6.html
     // for a table of space-like characters.  We use Unicode
@@ -6212,7 +6313,8 @@ const rowLikeTypes = new Set(["mrow", "mtable"]);
  * optional replacement from symbols.js.
  */
 const makeText = function (text, mode, options) {
-  if (src_symbols[mode][text] && src_symbols[mode][text].replace && text.charCodeAt(0) !== 0xD835 && !(ligatures.hasOwnProperty(text) && options && (options.fontFamily && options.fontFamily.slice(4, 6) === "tt" || options.font && options.font.slice(4, 6) === "tt"))) {
+  var _options$fontFamily, _options$font;
+  if (src_symbols[mode][text] && src_symbols[mode][text].replace && text.charCodeAt(0) !== 0xD835 && !(Object.prototype.hasOwnProperty.call(ligatures, text) && ((options == null || (_options$fontFamily = options.fontFamily) == null ? void 0 : _options$fontFamily.slice(4, 6)) === "tt" || (options == null || (_options$font = options.font) == null ? void 0 : _options$font.slice(4, 6)) === "tt"))) {
     text = src_symbols[mode][text].replace;
   }
   return new TextNode(text);
@@ -6229,57 +6331,55 @@ const makeRow = function (body) {
     return new MathNode("mrow", body);
   }
 };
+const mathFontVariants = {
+  mathit: "italic",
+  boldsymbol: group => group.type === "textord" ? "bold" : "bold-italic",
+  mathbf: "bold",
+  mathbb: "double-struck",
+  mathsfit: "sans-serif-italic",
+  mathfrak: "fraktur",
+  mathscr: "script",
+  mathcal: "script",
+  mathsf: "sans-serif",
+  mathtt: "monospace"
+};
 
 /**
  * Returns the math variant as a string or null if none is required.
  */
-const getVariant = function (group, options) {
+const getVariant = (group, options) => {
   // Handle \text... font specifiers as best we can.
   // MathML has a limited list of allowable mathvariant specifiers; see
   // https://www.w3.org/TR/MathML3/chapter3.html#presm.commatt
-  if (options.fontFamily === "texttt") {
-    return "monospace";
-  } else if (options.fontFamily === "textsf") {
-    if (options.fontShape === "textit" && options.fontWeight === "textbf") {
-      return "sans-serif-bold-italic";
+  if (group.mode === "text") {
+    if (options.fontFamily === "texttt") {
+      return "monospace";
+    } else if (options.fontFamily === "textsf") {
+      if (options.fontShape === "textit" && options.fontWeight === "textbf") {
+        return "sans-serif-bold-italic";
+      } else if (options.fontShape === "textit") {
+        return "sans-serif-italic";
+      } else if (options.fontWeight === "textbf") {
+        return "bold-sans-serif";
+      } else {
+        return "sans-serif";
+      }
+    } else if (options.fontShape === "textit" && options.fontWeight === "textbf") {
+      return "bold-italic";
     } else if (options.fontShape === "textit") {
-      return "sans-serif-italic";
+      return "italic";
     } else if (options.fontWeight === "textbf") {
-      return "bold-sans-serif";
-    } else {
-      return "sans-serif";
+      return "bold";
     }
-  } else if (options.fontShape === "textit" && options.fontWeight === "textbf") {
-    return "bold-italic";
-  } else if (options.fontShape === "textit") {
-    return "italic";
-  } else if (options.fontWeight === "textbf") {
-    return "bold";
   }
   const font = options.font;
   if (!font || font === "mathnormal") {
     return null;
   }
   const mode = group.mode;
-  if (font === "mathit") {
-    return "italic";
-  } else if (font === "boldsymbol") {
-    return group.type === "textord" ? "bold" : "bold-italic";
-  } else if (font === "mathbf") {
-    return "bold";
-  } else if (font === "mathbb") {
-    return "double-struck";
-  } else if (font === "mathsfit") {
-    return "sans-serif-italic";
-  } else if (font === "mathfrak") {
-    return "fraktur";
-  } else if (font === "mathscr" || font === "mathcal") {
-    // MathML makes no distinction between script and calligraphic
-    return "script";
-  } else if (font === "mathsf") {
-    return "sans-serif";
-  } else if (font === "mathtt") {
-    return "monospace";
+  const mathVariant = mathFontVariants[font];
+  if (mathVariant) {
+    return typeof mathVariant === "function" ? mathVariant(group) : mathVariant;
   }
   let text = group.text;
   if (noVariantSymbols.has(text)) {
@@ -6399,11 +6499,10 @@ const buildMathML_buildGroup = function (group, options) {
     return new MathNode("mrow");
   }
   if (_mathmlGroupBuilders[group.type]) {
-    // Call the groupBuilders function
-    // TODO(ts)
-    const result = _mathmlGroupBuilders[group.type](group, options);
-    // TODO(ts)
-    return result;
+    // TODO(ts): MathMLBuilder returns MathDomNode but all concrete
+    // builders return MathNode. Widening the return type here would
+    // require updating all callers that assume MathNode.
+    return _mathmlGroupBuilders[group.type](group, options);
   } else {
     throw new src_ParseError("Got group of unknown type: '" + group.type + "'");
   }
@@ -6448,8 +6547,11 @@ function buildMathML(tree, texExpression, options, isDisplayMode, forMathmlOnly)
   // NOTE: The span class is not typed to have <math> nodes as children, and
   // we don't want to make the children type more generic since the children
   // of span are expected to have more fields in `buildHtml` contexts.
+  // The MathNode implements VirtualNode (toNode/toMarkup) which is all that
+  // Span needs from its children for rendering.
+  // TODO(ts): Span's child type is HtmlDomNode, but MathNode only implements
+  // VirtualNode. The double-cast acknowledges this architectural limitation.
   const wrapperClass = forMathmlOnly ? "katex" : "katex-mathml";
-  // TODO(ts)
   return makeSpan([wrapperClass], [math]);
 }
 ;// ./src/Options.ts
@@ -6493,9 +6595,6 @@ const sizeMultipliers = [
 const sizeAtStyle = function (size, style) {
   return style.size < 2 ? size : sizeStyleMap[size - 1][style.size - 1];
 };
-
-// In these types, "" (empty string) means "no change".
-
 /**
  * This is the main options class. It contains the current style, size, color,
  * and font.
@@ -6505,6 +6604,22 @@ const sizeAtStyle = function (size, style) {
  */
 class Options {
   constructor(data) {
+    this.style = void 0;
+    this.color = void 0;
+    this.size = void 0;
+    this.textSize = void 0;
+    this.phantom = void 0;
+    // A font family applies to a group of fonts (i.e. SansSerif), while a font
+    // represents a specific font (i.e. SansSerif Bold).
+    // See: https://tex.stackexchange.com/questions/22350/difference-between-textrm-and-mathrm
+    this.font = void 0;
+    this.fontFamily = void 0;
+    this.fontWeight = void 0;
+    this.fontShape = void 0;
+    this.sizeMultiplier = void 0;
+    this.maxSize = void 0;
+    this.minRuleThickness = void 0;
+    this._fontMetrics = void 0;
     this.style = data.style;
     this.color = data.color;
     this.size = data.size || Options.BASESIZE;
@@ -6512,8 +6627,8 @@ class Options {
     this.phantom = !!data.phantom;
     this.font = data.font || "";
     this.fontFamily = data.fontFamily || "";
-    this.fontWeight = data.fontWeight || '';
-    this.fontShape = data.fontShape || '';
+    this.fontWeight = data.fontWeight || "";
+    this.fontShape = data.fontShape || "";
     this.sizeMultiplier = sizeMultipliers[this.size - 1];
     this.maxSize = data.maxSize;
     this.minRuleThickness = data.minRuleThickness;
@@ -6688,7 +6803,7 @@ class Options {
    */
   sizingClasses(oldOptions) {
     if (oldOptions.size !== this.size) {
-      return ["sizing", "reset-size" + oldOptions.size, "size" + this.size];
+      return ["katex-sizing", "reset-size" + oldOptions.size, "size" + this.size];
     } else {
       return [];
     }
@@ -6700,7 +6815,7 @@ class Options {
    */
   baseSizingClasses() {
     if (this.size !== Options.BASESIZE) {
-      return ["sizing", "reset-size" + this.size, "size" + Options.BASESIZE];
+      return ["katex-sizing", "reset-size" + this.size, "size" + Options.BASESIZE];
     } else {
       return [];
     }
@@ -6727,9 +6842,6 @@ class Options {
     }
   }
 }
-// A font family applies to a group of fonts (i.e. SansSerif), while a font
-// represents a specific font (i.e. SansSerif Bold).
-// See: https://tex.stackexchange.com/questions/22350/difference-between-textrm-and-mathrm
 /**
  * The base size index.
  */
@@ -6938,14 +7050,10 @@ const stretchySvg = function (group, options) {
   function buildSvgSpan_() {
     let viewBoxWidth = 400000; // default
     const label = group.label.slice(1);
-    if (wideAccentLabels.has(label)) {
-      // Each type in the `if` statement corresponds to one of the ParseNode
-      // types below. This narrowing is required to access `grp.base`.
-      // TODO(ts)
-      const grp = group;
+    if (wideAccentLabels.has(label) && 'base' in group) {
       // There are four SVG images available for each function.
       // Choose a taller image when there are more characters.
-      const numChars = grp.base.type === "ordgroup" ? grp.base.body.length : 1;
+      const numChars = group.base.type === "ordgroup" ? group.base.body.length : 1;
       let viewBoxHeight;
       let pathName;
       let height;
@@ -6990,16 +7098,22 @@ const stretchySvg = function (group, options) {
     } else {
       const spans = [];
       const data = katexImagesData[label];
-      const [paths, minWidth, viewBoxHeight] = data;
+      if (!data) {
+        throw new Error("No SVG data for \"" + label + "\".");
+      }
+      const paths = data[0],
+        minWidth = data[1],
+        viewBoxHeight = data[2];
       const height = viewBoxHeight / 1000;
       const numSvgChildren = paths.length;
       let widthClasses;
       let aligns;
       if (numSvgChildren === 1) {
-        // TODO(ts): All these cases must be of the 4-tuple type.
-        const align1 = data[3];
+        if (data.length !== 4) {
+          throw new Error("Expected 4-tuple for single-path SVG data \"" + label + "\".");
+        }
         widthClasses = ["hide-tail"];
-        aligns = [align1];
+        aligns = [data[3]];
       } else if (numSvgChildren === 2) {
         widthClasses = ["halfarrow-left", "halfarrow-right"];
         aligns = ["xMinYMin", "xMaxYMin"];
@@ -7030,17 +7144,16 @@ const stretchySvg = function (group, options) {
         }
       }
       return {
-        span: makeSpan(["stretchy"], spans, options),
+        span: makeSpan(["katex-stretchy"], spans, options),
         minWidth,
         height
       };
     }
   } // buildSvgSpan_()
-  const {
-    span,
-    minWidth,
-    height
-  } = buildSvgSpan_();
+  const _buildSvgSpan_ = buildSvgSpan_(),
+    span = _buildSvgSpan_.span,
+    minWidth = _buildSvgSpan_.minWidth,
+    height = _buildSvgSpan_.height;
 
   // Note that we are returning span.depth = 0.
   // Any adjustments relative to the baseline must be done in buildHTML.
@@ -7056,7 +7169,7 @@ const stretchyEnclose = function (inner, label, topPad, bottomPad, options) {
   let img;
   const totalHeight = inner.height + inner.depth + topPad + bottomPad;
   if (/fbox|color|angl/.test(label)) {
-    img = makeSpan(["stretchy", label], [], options);
+    img = makeSpan(["katex-stretchy", label], [], options);
     if (label === "fbox") {
       const color = options.color && options.getColor();
       if (color) {
@@ -7097,16 +7210,22 @@ const stretchyEnclose = function (inner, label, topPad, bottomPad, options) {
   img.style.height = makeEm(totalHeight);
   return img;
 };
+;// ./src/atoms.ts
+/**
+ * Small module for atom-group constants and type guard.  Kept separate from
+ * `symbols.ts` so that consumers (notably `contrib/render-a11y-string`) can
+ * pull in `isAtom` without dragging in the ~870-line symbol tables.
+ */
+
+const atomList = ["bin", "close", "inner", "open", "punct", "rel"];
+const nonAtomList = ["accent-token", "mathord", "op-token", "spacing", "textord"];
+const Atoms = new Set(atomList);
+const NonAtoms = new Set(nonAtomList);
+function isAtom(value) {
+  return Atoms.has(value);
+}
 ;// ./src/parseNode.ts
 
-
-// ParseNode's corresponding to Symbol `Group`s in symbols.js.
-
-// ParseNode from `Parser.formatUnsupportedCmd`
-
-// Union of all possible `ParseNode<>` types.
-
-// Map from `NodeType` to the corresponding `ParseNode`.
 
 /**
  * Asserts that the node is of the given type and returns it with stricter
@@ -7132,14 +7251,33 @@ function assertSymbolNodeType(node) {
 }
 
 /**
- * Returns the node more strictly typed iff it is of the given type. Otherwise,
+ * Returns the node more strictly typed if it is of the given type. Otherwise,
  * returns null.
  */
 function checkSymbolNodeType(node) {
-  if (node && (node.type === "atom" || NON_ATOMS.hasOwnProperty(node.type))) {
+  if (node.type === "atom" || NonAtoms.has(node.type)) {
     return node;
   }
   return null;
+}
+
+/**
+ * Returns the string spelled out by a group of plain characters, throwing the
+ * given ParseError if the group holds anything else. With allowSpaces, a
+ * literal space counts as a character; `~` and `\ ` do not.
+ */
+function assertCharacterGroup(group, errorMessage, allowSpaces) {
+  let text = "";
+  for (const node of group.body) {
+    if (node.type === "textord") {
+      text += node.text;
+    } else if (allowSpaces && node.type === "spacing" && node.text === " ") {
+      text += " ";
+    } else {
+      throw new src_ParseError(errorMessage, group);
+    }
+  }
+  return text;
 }
 ;// ./src/functions/accent.ts
 
@@ -7236,7 +7374,7 @@ const htmlBuilder = (grp, options) => {
         type: "textord",
         mode: group.mode,
         text: group.label
-      }, options, "textord");
+      }, options);
       accent = assertSymbolDomNode(accent);
       // Remove the italic correction of the accent, because it only serves to
       // shift the accent over to a place we don't want.
@@ -7260,7 +7398,7 @@ const htmlBuilder = (grp, options) => {
     // Shift the accent over by the skew.
     let left = skew;
 
-    // CSS defines `.katex .accent .accent-body:not(.accent-full) { width: 0 }`
+    // CSS defines `.katex .katex-accent .accent-body:not(.accent-full) { width: 0 }`
     // so that the accent doesn't contribute to the bounding box.
     // We need to shift the character by its width (effectively half
     // its width) to compensate.
@@ -7305,7 +7443,7 @@ const htmlBuilder = (grp, options) => {
       }]
     }, options);
   }
-  const accentWrap = makeSpan(["mord", "accent"], [accentBody], options);
+  const accentWrap = makeSpan(["mord", "katex-accent"], [accentBody], options);
   if (supSubGroup) {
     // Here, we replace the "base" child of the supsub with our newly
     // generated accent.
@@ -7334,9 +7472,7 @@ const NON_STRETCHY_ACCENT_REGEX = new RegExp(["\\acute", "\\grave", "\\ddot", "\
 defineFunction({
   type: "accent",
   names: ["\\acute", "\\grave", "\\ddot", "\\tilde", "\\bar", "\\breve", "\\check", "\\hat", "\\vec", "\\dot", "\\mathring", "\\widecheck", "\\widehat", "\\widetilde", "\\overrightarrow", "\\overleftarrow", "\\Overrightarrow", "\\overleftrightarrow", "\\overgroup", "\\overlinesegment", "\\overleftharpoon", "\\overrightharpoon"],
-  props: {
-    numArgs: 1
-  },
+  numArgs: 1,
   handler: (context, args) => {
     const base = normalizeArgument(args[0]);
     const isStretchy = !NON_STRETCHY_ACCENT_REGEX.test(context.funcName);
@@ -7358,13 +7494,11 @@ defineFunction({
 defineFunction({
   type: "accent",
   names: ["\\'", "\\`", "\\^", "\\~", "\\=", "\\u", "\\.", '\\"', "\\c", "\\r", "\\H", "\\v", "\\textcircled"],
-  props: {
-    numArgs: 1,
-    allowedInText: true,
-    allowedInMath: true,
-    // unless in strict mode
-    argTypes: ["primitive"]
-  },
+  numArgs: 1,
+  allowedInText: true,
+  allowedInMath: true,
+  // unless in strict mode
+  argTypes: ["primitive"],
   handler: (context, args) => {
     const base = args[0];
     let mode = context.parser.mode;
@@ -7380,9 +7514,7 @@ defineFunction({
       isShifty: true,
       base: base
     };
-  },
-  htmlBuilder,
-  mathmlBuilder
+  }
 });
 ;// ./src/functions/accentunder.ts
 // Horizontal overlap functions
@@ -7395,14 +7527,10 @@ defineFunction({
 defineFunction({
   type: "accentUnder",
   names: ["\\underleftarrow", "\\underrightarrow", "\\underleftrightarrow", "\\undergroup", "\\underlinesegment", "\\utilde"],
-  props: {
-    numArgs: 1
-  },
+  numArgs: 1,
   handler: (_ref, args) => {
-    let {
-      parser,
-      funcName
-    } = _ref;
+    let parser = _ref.parser,
+      funcName = _ref.funcName;
     const base = args[0];
     return {
       type: "accentUnder",
@@ -7466,15 +7594,11 @@ defineFunction({
   "\\xrightleftarrows", "\\xrightequilibrium", "\\xleftequilibrium",
   // The next 3 functions are here only to support the {CD} environment.
   "\\\\cdrightarrow", "\\\\cdleftarrow", "\\\\cdlongequal"],
-  props: {
-    numArgs: 1,
-    numOptionalArgs: 1
-  },
+  numArgs: 1,
+  numOptionalArgs: 1,
   handler(_ref, args, optArgs) {
-    let {
-      parser,
-      funcName
-    } = _ref;
+    let parser = _ref.parser,
+      funcName = _ref.funcName;
     return {
       type: "xArrow",
       mode: parser.mode,
@@ -7526,7 +7650,8 @@ defineFunction({
         }, {
           type: "elem",
           elem: arrowBody,
-          shift: arrowShift
+          shift: arrowShift,
+          wrapperClasses: ["svg-align"]
         }, {
           type: "elem",
           elem: lowerGroup,
@@ -7543,13 +7668,11 @@ defineFunction({
         }, {
           type: "elem",
           elem: arrowBody,
-          shift: arrowShift
+          shift: arrowShift,
+          wrapperClasses: ["svg-align"]
         }]
       }, options);
     }
-
-    // TODO(ts): Replace this with passing "svg-align" into makeVList.
-    vlist.children[0].children[0].children[1].classes.push("svg-align");
     return makeSpan(["mrel", "x-arrow"], [vlist], options);
   },
   mathmlBuilder(group, options) {
@@ -7618,9 +7741,6 @@ function mclass_mathmlBuilder(group, options) {
     } else if (group.mclass === "mopen" || group.mclass === "mclose") {
       node.attributes.lspace = "0em";
       node.attributes.rspace = "0em";
-    } else if (group.mclass === "minner") {
-      node.attributes.lspace = "0.0556em"; // 1 mu is the most likely option
-      node.attributes.width = "+0.1111em";
     }
     // MathML <mo> default space is 5/18 em, so <mrel> needs no action.
     // Ref: https://developer.mozilla.org/en-US/docs/Web/MathML/Element/mo
@@ -7632,21 +7752,16 @@ function mclass_mathmlBuilder(group, options) {
 defineFunction({
   type: "mclass",
   names: ["\\mathord", "\\mathbin", "\\mathrel", "\\mathopen", "\\mathclose", "\\mathpunct", "\\mathinner"],
-  props: {
-    numArgs: 1,
-    primitive: true
-  },
+  numArgs: 1,
+  primitive: true,
   handler(_ref, args) {
-    let {
-      parser,
-      funcName
-    } = _ref;
+    let parser = _ref.parser,
+      funcName = _ref.funcName;
     const body = args[0];
     return {
       type: "mclass",
       mode: parser.mode,
       mclass: "m" + funcName.slice(5),
-      // TODO(kevinb): don't prefix with 'm'
       body: ordargument(body),
       isCharacterBox: isCharacterBox(body)
     };
@@ -7672,13 +7787,9 @@ const binrelClass = arg => {
 defineFunction({
   type: "mclass",
   names: ["\\@binrel"],
-  props: {
-    numArgs: 2
-  },
+  numArgs: 2,
   handler(_ref2, args) {
-    let {
-      parser
-    } = _ref2;
+    let parser = _ref2.parser;
     return {
       type: "mclass",
       mode: parser.mode,
@@ -7693,14 +7804,10 @@ defineFunction({
 defineFunction({
   type: "mclass",
   names: ["\\stackrel", "\\overset", "\\underset"],
-  props: {
-    numArgs: 2
-  },
+  numArgs: 2,
   handler(_ref3, args) {
-    let {
-      parser,
-      funcName
-    } = _ref3;
+    let parser = _ref3.parser,
+      funcName = _ref3.funcName;
     const baseArg = args[1];
     const shiftedArg = args[0];
     let mclass;
@@ -7720,12 +7827,16 @@ defineFunction({
       suppressBaseShift: funcName !== "\\stackrel",
       body: ordargument(baseArg)
     };
-    const supsub = {
+    const supsub = funcName === "\\underset" ? {
       type: "supsub",
       mode: shiftedArg.mode,
       base: baseOp,
-      sup: funcName === "\\underset" ? null : shiftedArg,
-      sub: funcName === "\\underset" ? shiftedArg : null
+      sub: shiftedArg
+    } : {
+      type: "supsub",
+      mode: shiftedArg.mode,
+      base: baseOp,
+      sup: shiftedArg
     };
     return {
       type: "mclass",
@@ -7734,9 +7845,7 @@ defineFunction({
       body: [supsub],
       isCharacterBox: isCharacterBox(supsub)
     };
-  },
-  htmlBuilder: mclass_htmlBuilder,
-  mathmlBuilder: mclass_mathmlBuilder
+  }
 });
 ;// ./src/functions/pmb.ts
 
@@ -7753,14 +7862,10 @@ defineFunction({
 defineFunction({
   type: "pmb",
   names: ["\\pmb"],
-  props: {
-    numArgs: 1,
-    allowedInText: true
-  },
+  numArgs: 1,
+  allowedInText: true,
   handler(_ref, args) {
-    let {
-      parser
-    } = _ref;
+    let parser = _ref.parser;
     return {
       type: "pmb",
       mode: parser.mode,
@@ -7809,7 +7914,8 @@ const newCell = () => {
     type: "styling",
     body: [],
     mode: "math",
-    style: "display"
+    style: "display",
+    resetFont: true
   };
 };
 const isStartOfArrow = node => {
@@ -7871,7 +7977,6 @@ function parseCD(parser) {
   parser.gullet.macros.set("\\cr", "\\\\\\relax");
   parser.gullet.beginGroup();
   while (true) {
-    // eslint-disable-line no-constant-condition
     // Get the parse nodes for the next row.
     parsedRows.push(parser.parseExpression(false, "\\\\"));
     parser.gullet.endGroup();
@@ -7964,7 +8069,9 @@ function parseCD(parser) {
           type: "styling",
           body: [arrow],
           mode: "math",
-          style: "display" // CD is always displaystyle.
+          style: "display",
+          // CD is always displaystyle.
+          resetFont: true
         };
         row.push(wrappedArrow);
         // In CD's syntax, cells are implicit. That is, everything that
@@ -8022,14 +8129,10 @@ function parseCD(parser) {
 defineFunction({
   type: "cdlabel",
   names: ["\\\\cdleft", "\\\\cdright"],
-  props: {
-    numArgs: 1
-  },
+  numArgs: 1,
   handler(_ref, args) {
-    let {
-      parser,
-      funcName
-    } = _ref;
+    let parser = _ref.parser,
+      funcName = _ref.funcName;
     return {
       type: "cdlabel",
       mode: parser.mode,
@@ -8067,13 +8170,9 @@ defineFunction({
 defineFunction({
   type: "cdlabelparent",
   names: ["\\\\cdparent"],
-  props: {
-    numArgs: 1
-  },
+  numArgs: 1,
   handler(_ref2, args) {
-    let {
-      parser
-    } = _ref2;
+    let parser = _ref2.parser;
     return {
       type: "cdlabelparent",
       mode: parser.mode,
@@ -8103,28 +8202,19 @@ defineFunction({
 defineFunction({
   type: "textord",
   names: ["\\@char"],
-  props: {
-    numArgs: 1,
-    allowedInText: true
-  },
+  numArgs: 1,
+  allowedInText: true,
   handler(_ref, args) {
-    let {
-      parser
-    } = _ref;
+    let parser = _ref.parser;
     const arg = assertNodeType(args[0], "ordgroup");
-    const group = arg.body;
-    let number = "";
-    for (let i = 0; i < group.length; i++) {
-      const node = assertNodeType(group[i], "textord");
-      number += node.text;
-    }
+    const number = assertCharacterGroup(arg, "\\@char has non-numeric argument");
     let code = parseInt(number);
     let text;
     if (isNaN(code)) {
       throw new src_ParseError("\\@char has non-numeric argument " + number);
       // If we drop IE support, the following code could be replaced with
       // text = String.fromCodePoint(code)
-    } else if (code < 0 || code >= 0x10ffff) {
+    } else if (code < 0 || code > 0x10ffff) {
       throw new src_ParseError("\\@char with invalid code point " + number);
     } else if (code <= 0xffff) {
       text = String.fromCharCode(code);
@@ -8165,15 +8255,11 @@ const color_mathmlBuilder = (group, options) => {
 defineFunction({
   type: "color",
   names: ["\\textcolor"],
-  props: {
-    numArgs: 2,
-    allowedInText: true,
-    argTypes: ["color", "original"]
-  },
+  numArgs: 2,
+  allowedInText: true,
+  argTypes: ["color", "original"],
   handler(_ref, args) {
-    let {
-      parser
-    } = _ref;
+    let parser = _ref.parser;
     const color = assertNodeType(args[0], "color-token").color;
     const body = args[1];
     return {
@@ -8189,16 +8275,12 @@ defineFunction({
 defineFunction({
   type: "color",
   names: ["\\color"],
-  props: {
-    numArgs: 1,
-    allowedInText: true,
-    argTypes: ["color"]
-  },
+  numArgs: 1,
+  allowedInText: true,
+  argTypes: ["color"],
   handler(_ref2, args) {
-    let {
-      parser,
-      breakOnTokenText
-    } = _ref2;
+    let parser = _ref2.parser,
+      breakOnTokenText = _ref2.breakOnTokenText;
     const color = assertNodeType(args[0], "color-token").color;
 
     // Set macro \current@color in current namespace to store the current
@@ -8215,9 +8297,7 @@ defineFunction({
       color,
       body
     };
-  },
-  htmlBuilder: color_htmlBuilder,
-  mathmlBuilder: color_mathmlBuilder
+  }
 });
 ;// ./src/functions/cr.ts
 // Row breaks within tabular environments, and line breaks at top level
@@ -8232,15 +8312,11 @@ defineFunction({
 defineFunction({
   type: "cr",
   names: ["\\\\"],
-  props: {
-    numArgs: 0,
-    numOptionalArgs: 0,
-    allowedInText: true
-  },
+  numArgs: 0,
+  numOptionalArgs: 0,
+  allowedInText: true,
   handler(_ref, args, optArgs) {
-    let {
-      parser
-    } = _ref;
+    let parser = _ref.parser;
     const size = parser.gullet.future().text === "[" ? parser.parseSizeGroup(true) : null;
     const newLine = !parser.settings.displayMode || !parser.settings.useStrictBehavior("newLineInDisplayMode", "In LaTeX, \\\\ or \\newline " + "does nothing in display mode");
     return {
@@ -8256,7 +8332,7 @@ defineFunction({
   htmlBuilder(group, options) {
     const span = makeSpan(["mspace"], [], options);
     if (group.newLine) {
-      span.classes.push("newline");
+      span.classes.push("katex-newline");
       if (group.size) {
         span.style.marginTop = makeEm(calculateSize(group.size, options));
       }
@@ -8332,15 +8408,11 @@ defineFunction({
   type: "internal",
   names: ["\\global", "\\long", "\\\\globallong" // can’t be entered directly
   ],
-  props: {
-    numArgs: 0,
-    allowedInText: true
-  },
+  numArgs: 0,
+  allowedInText: true,
   handler(_ref) {
-    let {
-      parser,
-      funcName
-    } = _ref;
+    let parser = _ref.parser,
+      funcName = _ref.funcName;
     parser.consumeSpaces();
     const token = parser.fetch();
     if (globalMap[token.text]) {
@@ -8361,16 +8433,12 @@ defineFunction({
 defineFunction({
   type: "internal",
   names: ["\\def", "\\gdef", "\\edef", "\\xdef"],
-  props: {
-    numArgs: 0,
-    allowedInText: true,
-    primitive: true
-  },
+  numArgs: 0,
+  allowedInText: true,
+  primitive: true,
   handler(_ref2) {
-    let {
-      parser,
-      funcName
-    } = _ref2;
+    let parser = _ref2.parser,
+      funcName = _ref2.funcName;
     let tok = parser.gullet.popToken();
     const name = tok.text;
     if (/^(?:[\\{}$&#^_]|EOF)$/.test(name)) {
@@ -8411,9 +8479,8 @@ defineFunction({
       }
     }
     // replacement text, enclosed in '{' and '}' and properly nested
-    let {
-      tokens
-    } = parser.gullet.consumeArg();
+    let _parser$gullet$consum = parser.gullet.consumeArg(),
+      tokens = _parser$gullet$consum.tokens;
     if (insert) {
       tokens.unshift(insert);
     }
@@ -8442,16 +8509,12 @@ defineFunction({
   type: "internal",
   names: ["\\let", "\\\\globallet" // can’t be entered directly
   ],
-  props: {
-    numArgs: 0,
-    allowedInText: true,
-    primitive: true
-  },
+  numArgs: 0,
+  allowedInText: true,
+  primitive: true,
   handler(_ref3) {
-    let {
-      parser,
-      funcName
-    } = _ref3;
+    let parser = _ref3.parser,
+      funcName = _ref3.funcName;
     const name = checkControlSequence(parser.gullet.popToken());
     parser.gullet.consumeSpaces();
     const tok = getRHS(parser);
@@ -8468,16 +8531,12 @@ defineFunction({
   type: "internal",
   names: ["\\futurelet", "\\\\globalfuture" // can’t be entered directly
   ],
-  props: {
-    numArgs: 0,
-    allowedInText: true,
-    primitive: true
-  },
+  numArgs: 0,
+  allowedInText: true,
+  primitive: true,
   handler(_ref4) {
-    let {
-      parser,
-      funcName
-    } = _ref4;
+    let parser = _ref4.parser,
+      funcName = _ref4.funcName;
     const name = checkControlSequence(parser.gullet.popToken());
     const middle = parser.gullet.popToken();
     const tok = parser.gullet.popToken();
@@ -8909,9 +8968,9 @@ const makeSqrtImage = function (height, options) {
 
   // Create a span containing an SVG image of a sqrt symbol.
   let span;
-  let spanHeight = 0;
-  let texHeight = 0;
-  let viewBoxHeight = 0;
+  let spanHeight;
+  let texHeight;
+  let viewBoxHeight;
   let advanceWidth;
 
   // We create viewBoxes with 80 units of "padding" above each surd.
@@ -9273,6 +9332,16 @@ const delimiterSizes = {
   }
 };
 const delimiters = new Set(["(", "\\lparen", ")", "\\rparen", "[", "\\lbrack", "]", "\\rbrack", "\\{", "\\lbrace", "\\}", "\\rbrace", "\\lfloor", "\\rfloor", "\u230a", "\u230b", "\\lceil", "\\rceil", "\u2308", "\u2309", "<", ">", "\\langle", "\u27e8", "\\rangle", "\u27e9", "\\lt", "\\gt", "\\lvert", "\\rvert", "\\lVert", "\\rVert", "\\lgroup", "\\rgroup", "\u27ee", "\u27ef", "\\lmoustache", "\\rmoustache", "\u23b0", "\u23b1", "/", "\\backslash", "|", "\\vert", "\\|", "\\Vert", "\\uparrow", "\\Uparrow", "\\downarrow", "\\Downarrow", "\\updownarrow", "\\Updownarrow", "."]);
+
+/**
+ * An HtmlDomNode that carries an `isMiddle` property, used by the
+ * \middle command to communicate delimiter info to the \left/\right builder.
+ */
+
+function isMiddleDelimNode(node) {
+  return 'isMiddle' in node;
+}
+
 // Delimiter functions
 function checkDelimiter(delim, context) {
   const symDelim = checkSymbolNodeType(delim);
@@ -9287,12 +9356,10 @@ function checkDelimiter(delim, context) {
 defineFunction({
   type: "delimsizing",
   names: ["\\bigl", "\\Bigl", "\\biggl", "\\Biggl", "\\bigr", "\\Bigr", "\\biggr", "\\Biggr", "\\bigm", "\\Bigm", "\\biggm", "\\Biggm", "\\big", "\\Big", "\\bigg", "\\Bigg"],
-  props: {
-    numArgs: 1,
-    argTypes: ["primitive"]
-  },
+  numArgs: 1,
+  argTypes: ["primitive"],
   handler: (context, args) => {
-    const delim = checkDelimiter(args[0], context);
+    const delim = checkDelimiter(normalizeArgument(args[0]), context);
     return {
       type: "delimsizing",
       mode: context.parser.mode,
@@ -9339,10 +9406,8 @@ function assertParsed(group) {
 defineFunction({
   type: "leftright-right",
   names: ["\\right"],
-  props: {
-    numArgs: 1,
-    primitive: true
-  },
+  numArgs: 1,
+  primitive: true,
   handler: (context, args) => {
     // \left case below triggers parsing of \right in
     //   `const right = parser.parseFunction();`
@@ -9355,17 +9420,15 @@ defineFunction({
       type: "leftright-right",
       mode: context.parser.mode,
       delim: checkDelimiter(args[0], context).text,
-      color: color // undefined if not set via \color
+      color // undefined if not set via \color
     };
   }
 });
 defineFunction({
   type: "leftright",
   names: ["\\left"],
-  props: {
-    numArgs: 1,
-    primitive: true
-  },
+  numArgs: 1,
+  primitive: true,
   handler: (context, args) => {
     const delim = checkDelimiter(args[0], context);
     const parser = context.parser;
@@ -9396,10 +9459,8 @@ defineFunction({
 
     // Calculate its height and depth
     for (let i = 0; i < inner.length; i++) {
-      // Property `isMiddle` not defined on `span`. See comment in
-      // "middle"'s htmlBuilder.
-      // TODO(ts)
-      if (inner[i].isMiddle) {
+      const node = inner[i];
+      if (isMiddleDelimNode(node)) {
         hadMiddle = true;
       } else {
         innerHeight = Math.max(inner[i].height, innerHeight);
@@ -9428,11 +9489,8 @@ defineFunction({
     if (hadMiddle) {
       for (let i = 1; i < inner.length; i++) {
         const middleDelim = inner[i];
-        // Property `isMiddle` not defined on `span`. See comment in
-        // "middle"'s htmlBuilder.
-        // TODO(ts)
-        const isMiddle = middleDelim.isMiddle;
-        if (isMiddle) {
+        if (isMiddleDelimNode(middleDelim)) {
+          const isMiddle = middleDelim.isMiddle;
           // Apply the options that were active when \middle was called
           inner[i] = makeLeftRightDelim(isMiddle.delim, innerHeight, innerDepth, isMiddle.options, group.mode, []);
         }
@@ -9472,10 +9530,8 @@ defineFunction({
 defineFunction({
   type: "middle",
   names: ["\\middle"],
-  props: {
-    numArgs: 1,
-    primitive: true
-  },
+  numArgs: 1,
+  primitive: true,
   handler: (context, args) => {
     const delim = checkDelimiter(args[0], context);
     if (!context.parser.leftrightDepth) {
@@ -9493,16 +9549,15 @@ defineFunction({
       middleDelim = makeNullDelimiter(options, []);
     } else {
       middleDelim = makeSizedDelim(group.delim, 1, options, group.mode, []);
-      const isMiddle = {
+
+      // Patch an ad-hoc property onto the node so the \left/\right
+      // builder can reconstruct appropriately sized middle delimiters.
+      // isMiddle is not part of HtmlDomNode; the read side uses
+      // isMiddleDelimNode() to check before accessing.
+      middleDelim.isMiddle = {
         delim: group.delim,
         options
       };
-      // Property `isMiddle` not defined on `span`. It is only used in
-      // this file above.
-      // TODO: Fix this violation of the `span` type and possibly rename
-      // things since `isMiddle` sounds like a boolean, but is a struct.
-      // TODO(ts)
-      middleDelim.isMiddle = isMiddle;
     }
     return middleDelim;
   },
@@ -9541,7 +9596,7 @@ const enclose_htmlBuilder = (group, options) => {
   const label = group.label.slice(1);
   let scale = options.sizeMultiplier;
   let img;
-  let imgShift = 0;
+  let imgShift;
 
   // In the LaTeX cancel package, line geometry is slightly different
   // depending on whether the subject is wider than it is tall, or vice versa.
@@ -9550,7 +9605,7 @@ const enclose_htmlBuilder = (group, options) => {
   // subjects that should get the "tall" treatment.
   const isSingleChar = isCharacterBox(group.body);
   if (label === "sout") {
-    img = makeSpan(["stretchy", "sout"]);
+    img = makeSpan(["katex-stretchy", "katex-sout"]);
     img.height = options.fontMetrics().defaultRuleThickness / scale;
     imgShift = -0.5 * options.fontMetrics().xHeight;
   } else if (label === "phase") {
@@ -9597,8 +9652,8 @@ const enclose_htmlBuilder = (group, options) => {
     }
 
     // Add vertical padding
-    let topPad = 0;
-    let bottomPad = 0;
+    let topPad;
+    let bottomPad;
     let ruleThickness = 0;
     // ref: cancel package: \advance\totalheight2\p@ % "+2"
     if (/box/.test(label)) {
@@ -9680,7 +9735,7 @@ const enclose_htmlBuilder = (group, options) => {
   }
 };
 const enclose_mathmlBuilder = (group, options) => {
-  let fboxsep = 0;
+  let fboxsep;
   const node = new MathNode(group.label.includes("colorbox") ? "mpadded" : "menclose", [buildMathML_buildGroup(group.body, options)]);
   switch (group.label) {
     case "\\cancel":
@@ -9730,16 +9785,12 @@ const enclose_mathmlBuilder = (group, options) => {
 defineFunction({
   type: "enclose",
   names: ["\\colorbox"],
-  props: {
-    numArgs: 2,
-    allowedInText: true,
-    argTypes: ["color", "text"]
-  },
+  numArgs: 2,
+  allowedInText: true,
+  argTypes: ["color", "hbox"],
   handler(_ref, args, optArgs) {
-    let {
-      parser,
-      funcName
-    } = _ref;
+    let parser = _ref.parser,
+      funcName = _ref.funcName;
     const color = assertNodeType(args[0], "color-token").color;
     const body = args[1];
     return {
@@ -9756,16 +9807,12 @@ defineFunction({
 defineFunction({
   type: "enclose",
   names: ["\\fcolorbox"],
-  props: {
-    numArgs: 3,
-    allowedInText: true,
-    argTypes: ["color", "color", "text"]
-  },
+  numArgs: 3,
+  allowedInText: true,
+  argTypes: ["color", "color", "hbox"],
   handler(_ref2, args, optArgs) {
-    let {
-      parser,
-      funcName
-    } = _ref2;
+    let parser = _ref2.parser,
+      funcName = _ref2.funcName;
     const borderColor = assertNodeType(args[0], "color-token").color;
     const backgroundColor = assertNodeType(args[1], "color-token").color;
     const body = args[2];
@@ -9777,22 +9824,16 @@ defineFunction({
       borderColor,
       body
     };
-  },
-  htmlBuilder: enclose_htmlBuilder,
-  mathmlBuilder: enclose_mathmlBuilder
+  }
 });
 defineFunction({
   type: "enclose",
   names: ["\\fbox"],
-  props: {
-    numArgs: 1,
-    argTypes: ["hbox"],
-    allowedInText: true
-  },
+  numArgs: 1,
+  argTypes: ["hbox"],
+  allowedInText: true,
   handler(_ref3, args) {
-    let {
-      parser
-    } = _ref3;
+    let parser = _ref3.parser;
     return {
       type: "enclose",
       mode: parser.mode,
@@ -9804,14 +9845,10 @@ defineFunction({
 defineFunction({
   type: "enclose",
   names: ["\\cancel", "\\bcancel", "\\xcancel", "\\phase"],
-  props: {
-    numArgs: 1
-  },
+  numArgs: 1,
   handler(_ref4, args) {
-    let {
-      parser,
-      funcName
-    } = _ref4;
+    let parser = _ref4.parser,
+      funcName = _ref4.funcName;
     const body = args[0];
     return {
       type: "enclose",
@@ -9819,22 +9856,16 @@ defineFunction({
       label: funcName,
       body
     };
-  },
-  htmlBuilder: enclose_htmlBuilder,
-  mathmlBuilder: enclose_mathmlBuilder
+  }
 });
 defineFunction({
   type: "enclose",
   names: ["\\sout"],
-  props: {
-    numArgs: 1,
-    allowedInText: true
-  },
+  numArgs: 1,
+  allowedInText: true,
   handler(_ref5, args) {
-    let {
-      parser,
-      funcName
-    } = _ref5;
+    let parser = _ref5.parser,
+      funcName = _ref5.funcName;
     if (parser.mode === "math") {
       parser.settings.reportNonstrict("mathVsSout", "LaTeX's \\sout works only in text mode");
     }
@@ -9845,22 +9876,16 @@ defineFunction({
       label: funcName,
       body
     };
-  },
-  htmlBuilder: enclose_htmlBuilder,
-  mathmlBuilder: enclose_mathmlBuilder
+  }
 });
 defineFunction({
   type: "enclose",
   names: ["\\angl"],
-  props: {
-    numArgs: 1,
-    argTypes: ["hbox"],
-    allowedInText: false
-  },
+  numArgs: 1,
+  argTypes: ["hbox"],
+  allowedInText: false,
   handler(_ref6, args) {
-    let {
-      parser
-    } = _ref6;
+    let parser = _ref6.parser;
     return {
       type: "enclose",
       mode: parser.mode,
@@ -9908,14 +9933,12 @@ defineFunction({
  */
 const _environments = {};
 function defineEnvironment(_ref) {
-  let {
-    type,
-    names,
-    props,
-    handler,
-    htmlBuilder,
-    mathmlBuilder
-  } = _ref;
+  let type = _ref.type,
+    names = _ref.names,
+    props = _ref.props,
+    handler = _ref.handler,
+    htmlBuilder = _ref.htmlBuilder,
+    mathmlBuilder = _ref.mathmlBuilder;
   // Set default values of environments.
   const data = {
     type,
@@ -9962,12 +9985,15 @@ function defineMacro(name, body) {
  * This object is immutable.
  */
 class SourceLocation {
-  // The + prefix indicates that these fields aren't writeable
-  // Lexer holding the input string.
-  // Start offset, zero-based inclusive.
   // End offset, zero-based exclusive.
 
   constructor(lexer, start, end) {
+    // The + prefix indicates that these fields aren't writeable
+    this.lexer = void 0;
+    // Lexer holding the input string.
+    this.start = void 0;
+    // Start offset, zero-based inclusive.
+    this.end = void 0;
     this.lexer = lexer;
     this.start = start;
     this.end = end;
@@ -10013,12 +10039,16 @@ class SourceLocation {
  * lead to degraded error reporting, though.
  */
 class Token {
-  // don't expand the token
   // used in \noexpand
 
   constructor(text,
   // the text of this token
   loc) {
+    this.text = void 0;
+    this.loc = void 0;
+    this.noexpand = void 0;
+    // don't expand the token
+    this.treatAsRelax = void 0;
     this.text = text;
     this.loc = loc;
   }
@@ -10035,7 +10065,6 @@ class Token {
   }
 }
 ;// ./src/environments/array.ts
-
 
 
 
@@ -10102,18 +10131,16 @@ function getAutoTag(name) {
  * ("text", "display", etc.), then each cell is cast into that style.
  */
 function parseArray(parser, _ref, style) {
-  let {
-    hskipBeforeAndAfter,
-    addJot,
-    cols,
-    arraystretch,
-    colSeparationType,
-    autoTag,
-    singleRow,
-    emptySingleRow,
-    maxNumCols,
-    leqno
-  } = _ref;
+  let hskipBeforeAndAfter = _ref.hskipBeforeAndAfter,
+    addJot = _ref.addJot,
+    cols = _ref.cols,
+    arraystretch = _ref.arraystretch,
+    colSeparationType = _ref.colSeparationType,
+    autoTag = _ref.autoTag,
+    singleRow = _ref.singleRow,
+    emptySingleRow = _ref.emptySingleRow,
+    maxNumCols = _ref.maxNumCols,
+    leqno = _ref.leqno;
   parser.gullet.beginGroup();
   if (!singleRow) {
     // \cr is equivalent to \\ without the optional size argument (see below)
@@ -10166,7 +10193,6 @@ function parseArray(parser, _ref, style) {
   // Test for \hline at the top of the array.
   hLinesBeforeRow.push(getHLines(parser));
   while (true) {
-    // eslint-disable-line no-constant-condition
     // Parse each cell in its own group (namespace)
     const cellBody = parser.parseExpression(false, singleRow ? "\\end" : "\\\\");
     parser.gullet.endGroup();
@@ -10181,6 +10207,7 @@ function parseArray(parser, _ref, style) {
         type: "styling",
         mode: parser.mode,
         style,
+        resetFont: true,
         body: [cell]
       };
     }
@@ -10201,9 +10228,10 @@ function parseArray(parser, _ref, style) {
       endRow();
       // Arrays terminate newlines with `\crcr` which consumes a `\cr` if
       // the last line is empty.  However, AMS environments keep the
-      // empty row if it's the only one.
+      // empty row if it's the only one, has a manual tag, or is an
+      // automatically numbered row explicitly ended with `\\`.
       // NOTE: Currently, `cell` is the last item added into `row`.
-      if (row.length === 1 && cell.type === "styling" && cell.body.length === 1 && cell.body[0].type === "ordgroup" && cell.body[0].body.length === 0 && (body.length > 1 || !emptySingleRow)) {
+      if (row.length === 1 && cell.type === "styling" && cell.body.length === 1 && cell.body[0].type === "ordgroup" && cell.body[0].body.length === 0 && (body.length > 1 || !emptySingleRow) && !Array.isArray(tags == null ? void 0 : tags[tags.length - 1]) && !(autoTag && (tags == null ? void 0 : tags[tags.length - 1]) === true)) {
         body.pop();
       }
       if (hLinesBeforeRow.length < body.length + 1) {
@@ -10324,7 +10352,12 @@ const array_htmlBuilder = function (group, options) {
     if (nc < inrow.length) {
       nc = inrow.length;
     }
-    const outrow = new Array(inrow.length);
+    const outrow = {
+      cells: new Array(inrow.length),
+      height: 0,
+      depth: 0,
+      pos: 0
+    };
     for (c = 0; c < inrow.length; ++c) {
       const elt = buildGroup(inrow[c], options);
       if (depth < elt.depth) {
@@ -10333,7 +10366,7 @@ const array_htmlBuilder = function (group, options) {
       if (height < elt.height) {
         height = elt.height;
       }
-      outrow[c] = elt;
+      outrow.cells[c] = elt;
     }
     const rowGap = group.rowGaps[r];
     let gap = 0;
@@ -10449,7 +10482,7 @@ const array_htmlBuilder = function (group, options) {
     const colElems = [];
     for (r = 0; r < nr; ++r) {
       const row = body[r];
-      const elem = row[c];
+      const elem = row.cells[c];
       if (!elem) {
         continue;
       }
@@ -10482,8 +10515,8 @@ const array_htmlBuilder = function (group, options) {
 
   // Add \hline(s), if any.
   if (hlines.length > 0) {
-    const line = makeLineSpan("hline", options, ruleThickness);
-    const dashes = makeLineSpan("hdashline", options, ruleThickness);
+    const line = makeLineSpan("katex-hline", options, ruleThickness);
+    const dashes = makeLineSpan("katex-hdashline", options, ruleThickness);
     const vListElems = [{
       type: "elem",
       elem: tableBody,
@@ -10518,7 +10551,7 @@ const array_htmlBuilder = function (group, options) {
       positionType: "individualShift",
       children: tagSpans
     }, options);
-    const tagCol = makeSpan(["tag"], [eqnNumCol], options);
+    const tagCol = makeSpan(["katex-tag"], [eqnNumCol], options);
     return makeFragment([tableBody, tagCol]);
   }
 };
@@ -10658,14 +10691,13 @@ const alignedHandler = function (context, args) {
     validateAmsEnvironmentContext(context);
   }
   const cols = [];
-  const separationType = context.envName.includes("at") ? "alignat" : "align";
   const isSplit = context.envName === "split";
   const res = parseArray(context.parser, {
     cols,
     addJot: true,
     autoTag: isSplit ? undefined : getAutoTag(context.envName),
     emptySingleRow: true,
-    colSeparationType: separationType,
+    colSeparationType: context.envName.includes("at") ? "alignat" : "align",
     maxNumCols: isSplit ? 2 : undefined,
     leqno: context.parser.settings.leqno
   }, "display");
@@ -10687,12 +10719,12 @@ const alignedHandler = function (context, args) {
     body: []
   };
   if (args[0] && args[0].type === "ordgroup") {
-    let arg0 = "";
-    for (let i = 0; i < args[0].body.length; i++) {
-      const textord = assertNodeType(args[0].body[i], "textord");
-      arg0 += textord.text;
+    const message = "Number of columns should be a positive integer";
+    const numColumns = assertCharacterGroup(args[0], message);
+    if (!/^[0-9]+$/.test(numColumns) || Number(numColumns) < 1) {
+      throw new src_ParseError(message, args[0]);
     }
-    numMaths = Number(arg0);
+    numMaths = Number(numColumns);
     numCols = numMaths * 2;
   }
   const isAligned = !numCols;
@@ -11060,11 +11092,9 @@ defineFunction({
   type: "text",
   // Doesn't matter what this is.
   names: ["\\hline", "\\hdashline"],
-  props: {
-    numArgs: 0,
-    allowedInText: true,
-    allowedInMath: true
-  },
+  numArgs: 0,
+  allowedInText: true,
+  allowedInMath: true,
   handler(context, args) {
     throw new src_ParseError(context.funcName + " valid only within array environment");
   }
@@ -11081,41 +11111,32 @@ const environments = _environments;
 
 
 
-
 // Environment delimiters. HTML/MathML rendering is defined in the corresponding
 // defineEnvironment definitions.
 defineFunction({
   type: "environment",
   names: ["\\begin", "\\end"],
-  props: {
-    numArgs: 1,
-    argTypes: ["text"]
-  },
+  numArgs: 1,
+  argTypes: ["text"],
   handler(_ref, args) {
-    let {
-      parser,
-      funcName
-    } = _ref;
+    let parser = _ref.parser,
+      funcName = _ref.funcName;
     const nameGroup = args[0];
     if (nameGroup.type !== "ordgroup") {
       throw new src_ParseError("Invalid environment name", nameGroup);
     }
-    let envName = "";
-    for (let i = 0; i < nameGroup.body.length; ++i) {
-      envName += assertNodeType(nameGroup.body[i], "textord").text;
-    }
+    const envName = assertCharacterGroup(nameGroup, "Environment name should contain only text characters and spaces", true);
     if (funcName === "\\begin") {
       // begin...end is similar to left...right
-      if (!src_environments.hasOwnProperty(envName)) {
+      if (!Object.prototype.hasOwnProperty.call(src_environments, envName)) {
         throw new src_ParseError("No such environment: " + envName, nameGroup);
       }
       // Build the environment object. Arguments and other information will
       // be made available to the begin and end methods using properties.
       const env = src_environments[envName];
-      const {
-        args,
-        optArgs
-      } = parser.parseArguments("\\begin{" + envName + "}", env);
+      const _parser$parseArgument = parser.parseArguments("\\begin{" + envName + "}", env),
+        args = _parser$parseArgument.args,
+        optArgs = _parser$parseArgument.optArgs;
       const context = {
         mode: parser.mode,
         envName,
@@ -11128,7 +11149,10 @@ defineFunction({
       if (end.name !== envName) {
         throw new src_ParseError("Mismatch: \\begin{" + envName + "} matched by \\end{" + end.name + "}", endNameToken);
       }
-      // TODO(ts), "environment" handler returns an environment ParseNode
+      // env.handler returns the specific node type (e.g. "array"),
+      // not "environment". This cast is unavoidable: defineFunction
+      // requires the handler to return ParseNode<"environment"> but
+      // \begin delegates to environment handlers with different types.
       return result;
     }
     return {
@@ -11160,8 +11184,7 @@ const font_mathmlBuilder = (group, options) => {
 const fontAliases = {
   "\\Bbb": "\\mathbb",
   "\\bold": "\\mathbf",
-  "\\frak": "\\mathfrak",
-  "\\bm": "\\boldsymbol"
+  "\\frak": "\\mathfrak"
 };
 defineFunction({
   type: "font",
@@ -11172,20 +11195,13 @@ defineFunction({
   "\\mathbb", "\\mathcal", "\\mathfrak", "\\mathscr", "\\mathsf", "\\mathtt",
   // aliases, except \bm defined below
   "\\Bbb", "\\bold", "\\frak"],
-  props: {
-    numArgs: 1,
-    allowedInArgument: true
-  },
+  numArgs: 1,
+  allowedInArgument: true,
   handler: (_ref, args) => {
-    let {
-      parser,
-      funcName
-    } = _ref;
+    let parser = _ref.parser,
+      funcName = _ref.funcName;
     const body = normalizeArgument(args[0]);
-    let func = funcName;
-    if (func in fontAliases) {
-      func = fontAliases[func];
-    }
+    const func = funcName in fontAliases ? fontAliases[funcName] : funcName;
     return {
       type: "font",
       mode: parser.mode,
@@ -11199,13 +11215,9 @@ defineFunction({
 defineFunction({
   type: "mclass",
   names: ["\\boldsymbol", "\\bm"],
-  props: {
-    numArgs: 1
-  },
+  numArgs: 1,
   handler: (_ref2, args) => {
-    let {
-      parser
-    } = _ref2;
+    let parser = _ref2.parser;
     const body = args[0];
     // amsbsy.sty's \boldsymbol uses \binrel spacing to inherit the
     // argument's bin|rel|ord status
@@ -11228,34 +11240,25 @@ defineFunction({
 defineFunction({
   type: "font",
   names: ["\\rm", "\\sf", "\\tt", "\\bf", "\\it", "\\cal"],
-  props: {
-    numArgs: 0,
-    allowedInText: true
-  },
+  numArgs: 0,
+  allowedInText: true,
   handler: (_ref3, args) => {
-    let {
-      parser,
-      funcName,
-      breakOnTokenText
-    } = _ref3;
-    const {
-      mode
-    } = parser;
+    let parser = _ref3.parser,
+      funcName = _ref3.funcName,
+      breakOnTokenText = _ref3.breakOnTokenText;
+    const mode = parser.mode;
     const body = parser.parseExpression(true, breakOnTokenText);
-    const style = "math" + funcName.slice(1);
     return {
       type: "font",
       mode: mode,
-      font: style,
+      font: "math" + funcName.slice(1),
       body: {
         type: "ordgroup",
         mode: parser.mode,
         body
       }
     };
-  },
-  htmlBuilder: font_htmlBuilder,
-  mathmlBuilder: font_mathmlBuilder
+  }
 });
 ;// ./src/functions/genfrac.ts
 
@@ -11449,15 +11452,11 @@ defineFunction({
   // can’t be entered directly
   "\\\\bracefrac", "\\\\brackfrac" // ditto
   ],
-  props: {
-    numArgs: 2,
-    allowedInArgument: true
-  },
+  numArgs: 2,
+  allowedInArgument: true,
   handler: (_ref, args) => {
-    let {
-      parser,
-      funcName
-    } = _ref;
+    let parser = _ref.parser,
+      funcName = _ref.funcName;
     const numer = args[0];
     const denom = args[1];
     let hasBarLine;
@@ -11521,16 +11520,12 @@ defineFunction({
 defineFunction({
   type: "infix",
   names: ["\\over", "\\choose", "\\atop", "\\brace", "\\brack"],
-  props: {
-    numArgs: 0,
-    infix: true
-  },
+  numArgs: 0,
+  infix: true,
   handler(_ref2) {
-    let {
-      parser,
-      funcName,
-      token
-    } = _ref2;
+    let parser = _ref2.parser,
+      funcName = _ref2.funcName,
+      token = _ref2.token;
     let replaceWith;
     switch (funcName) {
       case "\\over":
@@ -11571,15 +11566,11 @@ const delimFromValue = function (delimString) {
 defineFunction({
   type: "genfrac",
   names: ["\\genfrac"],
-  props: {
-    numArgs: 6,
-    allowedInArgument: true,
-    argTypes: ["math", "math", "size", "text", "math", "math"]
-  },
+  numArgs: 6,
+  allowedInArgument: true,
+  argTypes: ["math", "math", "size", "text", "math", "math"],
   handler(_ref3, args) {
-    let {
-      parser
-    } = _ref3;
+    let parser = _ref3.parser;
     const numer = args[4];
     const denom = args[5];
 
@@ -11631,17 +11622,13 @@ defineFunction({
 defineFunction({
   type: "infix",
   names: ["\\above"],
-  props: {
-    numArgs: 1,
-    argTypes: ["size"],
-    infix: true
-  },
+  numArgs: 1,
+  argTypes: ["size"],
+  infix: true,
   handler(_ref4, args) {
-    let {
-      parser,
-      funcName,
-      token
-    } = _ref4;
+    let parser = _ref4.parser,
+      funcName = _ref4.funcName,
+      token = _ref4.token;
     return {
       type: "infix",
       mode: parser.mode,
@@ -11654,15 +11641,11 @@ defineFunction({
 defineFunction({
   type: "genfrac",
   names: ["\\\\abovefrac"],
-  props: {
-    numArgs: 3,
-    argTypes: ["math", "size", "math"]
-  },
+  numArgs: 3,
+  argTypes: ["math", "size", "math"],
   handler: (_ref5, args) => {
-    let {
-      parser,
-      funcName
-    } = _ref5;
+    let parser = _ref5.parser,
+      funcName = _ref5.funcName;
     const numer = args[0];
     const barSize = assertNodeType(args[1], "infix").size;
     if (!barSize) {
@@ -11730,18 +11713,18 @@ const horizBrace_htmlBuilder = (grp, options) => {
         size: 0.1
       }, {
         type: "elem",
-        elem: braceBody
+        elem: braceBody,
+        wrapperClasses: ["svg-align"]
       }]
     }, options);
-    // TODO(ts): Replace this with passing "svg-align" into makeVList.
-    vlist.children[0].children[0].children[1].classes.push("svg-align");
   } else {
     vlist = makeVList({
       positionType: "bottom",
       positionData: body.depth + 0.1 + braceBody.height,
       children: [{
         type: "elem",
-        elem: braceBody
+        elem: braceBody,
+        wrapperClasses: ["svg-align"]
       }, {
         type: "kern",
         size: 0.1
@@ -11750,8 +11733,6 @@ const horizBrace_htmlBuilder = (grp, options) => {
         elem: body
       }]
     }, options);
-    // TODO(ts): Replace this with passing "svg-align" into makeVList.
-    vlist.children[0].children[0].children[0].classes.push("svg-align");
   }
   if (supSubGroup) {
     // To write the supsub, wrap the first vlist in another vlist:
@@ -11806,14 +11787,10 @@ const horizBrace_mathmlBuilder = (group, options) => {
 defineFunction({
   type: "horizBrace",
   names: ["\\overbrace", "\\underbrace", "\\overbracket", "\\underbracket"],
-  props: {
-    numArgs: 1
-  },
+  numArgs: 1,
   handler(_ref, args) {
-    let {
-      parser,
-      funcName
-    } = _ref;
+    let parser = _ref.parser,
+      funcName = _ref.funcName;
     return {
       type: "horizBrace",
       mode: parser.mode,
@@ -11835,15 +11812,11 @@ defineFunction({
 defineFunction({
   type: "href",
   names: ["\\href"],
-  props: {
-    numArgs: 2,
-    argTypes: ["url", "original"],
-    allowedInText: true
-  },
+  numArgs: 2,
+  argTypes: ["url", "original"],
+  allowedInText: true,
   handler: (_ref, args) => {
-    let {
-      parser
-    } = _ref;
+    let parser = _ref.parser;
     const body = args[1];
     const href = assertNodeType(args[0], "url").url;
     if (!parser.settings.isTrusted({
@@ -11875,15 +11848,11 @@ defineFunction({
 defineFunction({
   type: "href",
   names: ["\\url"],
-  props: {
-    numArgs: 1,
-    argTypes: ["url"],
-    allowedInText: true
-  },
+  numArgs: 1,
+  argTypes: ["url"],
+  allowedInText: true,
   handler: (_ref2, args) => {
-    let {
-      parser
-    } = _ref2;
+    let parser = _ref2.parser;
     const href = assertNodeType(args[0], "url").url;
     if (!parser.settings.isTrusted({
       command: "\\url",
@@ -11932,16 +11901,12 @@ defineFunction({
 defineFunction({
   type: "hbox",
   names: ["\\hbox"],
-  props: {
-    numArgs: 1,
-    argTypes: ["text"],
-    allowedInText: true,
-    primitive: true
-  },
+  numArgs: 1,
+  argTypes: ["text"],
+  allowedInText: true,
+  primitive: true,
   handler(_ref, args) {
-    let {
-      parser
-    } = _ref;
+    let parser = _ref.parser;
     return {
       type: "hbox",
       mode: parser.mode,
@@ -11949,11 +11914,11 @@ defineFunction({
     };
   },
   htmlBuilder(group, options) {
-    const elements = buildExpression(group.body, options, false);
+    const elements = buildExpression(group.body, options.withFont(''), false);
     return makeFragment(elements);
   },
   mathmlBuilder(group, options) {
-    return new MathNode("mrow", buildMathML_buildExpression(group.body, options));
+    return new MathNode("mrow", buildMathML_buildExpression(group.body, options.withFont('')));
   }
 });
 ;// ./src/functions/html.ts
@@ -11966,17 +11931,13 @@ defineFunction({
 defineFunction({
   type: "html",
   names: ["\\htmlClass", "\\htmlId", "\\htmlStyle", "\\htmlData"],
-  props: {
-    numArgs: 2,
-    argTypes: ["raw", "original"],
-    allowedInText: true
-  },
+  numArgs: 2,
+  argTypes: ["raw", "original"],
+  allowedInText: true,
   handler: (_ref, args) => {
-    let {
-      parser,
-      funcName,
-      token
-    } = _ref;
+    let parser = _ref.parser,
+      funcName = _ref.funcName,
+      token = _ref.token;
     const value = assertNodeType(args[0], "raw").string;
     const body = args[1];
     if (parser.settings.strict) {
@@ -12008,7 +11969,24 @@ defineFunction({
         break;
       case "\\htmlData":
         {
-          const data = value.split(",");
+          // `{,}` escapes a literal comma. Braces are used rather than a
+          // backslash because `\,` is a macro (a thin space) that expands
+          // away before this raw argument is ever read.
+          const ESCAPED_COMMA = "{,}";
+          const data = [];
+          let current = "";
+          for (let i = 0; i < value.length; i++) {
+            if (value.startsWith(ESCAPED_COMMA, i)) {
+              current += ",";
+              i += ESCAPED_COMMA.length - 1;
+            } else if (value[i] === ",") {
+              data.push(current);
+              current = "";
+            } else {
+              current += value[i];
+            }
+          }
+          data.push(current);
           for (let i = 0; i < data.length; i++) {
             const item = data[i];
             const firstEquals = item.indexOf("=");
@@ -12045,9 +12023,11 @@ defineFunction({
       classes.push(...group.attributes.class.trim().split(/\s+/));
     }
     const span = makeSpan(classes, elements, options);
-    for (const attr in group.attributes) {
-      if (attr !== "class" && group.attributes.hasOwnProperty(attr)) {
-        span.setAttribute(attr, group.attributes[attr]);
+    for (const _ref2 of Object.entries(group.attributes)) {
+      const attr = _ref2[0];
+      const value = _ref2[1];
+      if (attr !== "class") {
+        span.setAttribute(attr, value);
       }
     }
     return span;
@@ -12064,15 +12044,11 @@ defineFunction({
 defineFunction({
   type: "htmlmathml",
   names: ["\\html@mathml"],
-  props: {
-    numArgs: 2,
-    allowedInArgument: true,
-    allowedInText: true
-  },
+  numArgs: 2,
+  allowedInArgument: true,
+  allowedInText: true,
   handler: (_ref, args) => {
-    let {
-      parser
-    } = _ref;
+    let parser = _ref.parser;
     return {
       type: "htmlmathml",
       mode: parser.mode,
@@ -12122,16 +12098,12 @@ const sizeData = function (str) {
 defineFunction({
   type: "includegraphics",
   names: ["\\includegraphics"],
-  props: {
-    numArgs: 1,
-    numOptionalArgs: 1,
-    argTypes: ["raw", "url"],
-    allowedInText: false
-  },
+  numArgs: 1,
+  numOptionalArgs: 1,
+  argTypes: ["raw", "url"],
+  allowedInText: false,
   handler: (_ref, args, optArgs) => {
-    let {
-      parser
-    } = _ref;
+    let parser = _ref.parser;
     let width = {
       number: 0,
       unit: "em"
@@ -12252,17 +12224,13 @@ defineFunction({
 defineFunction({
   type: "kern",
   names: ["\\kern", "\\mkern", "\\hskip", "\\mskip"],
-  props: {
-    numArgs: 1,
-    argTypes: ["size"],
-    primitive: true,
-    allowedInText: true
-  },
+  numArgs: 1,
+  argTypes: ["size"],
+  primitive: true,
+  allowedInText: true,
   handler(_ref, args) {
-    let {
-      parser,
-      funcName
-    } = _ref;
+    let parser = _ref.parser,
+      funcName = _ref.funcName;
     const size = assertNodeType(args[0], "size");
     if (parser.settings.strict) {
       const mathFunction = funcName[1] === 'm'; // \mkern, \mskip
@@ -12306,15 +12274,11 @@ defineFunction({
 defineFunction({
   type: "lap",
   names: ["\\mathllap", "\\mathrlap", "\\mathclap"],
-  props: {
-    numArgs: 1,
-    allowedInText: true
-  },
+  numArgs: 1,
+  allowedInText: true,
   handler: (_ref, args) => {
-    let {
-      parser,
-      funcName
-    } = _ref;
+    let parser = _ref.parser,
+      funcName = _ref.funcName;
     const body = args[0];
     return {
       type: "lap",
@@ -12329,12 +12293,12 @@ defineFunction({
     if (group.alignment === "clap") {
       // ref: https://www.math.lsu.edu/~aperlis/publications/mathclap/
       inner = makeSpan([], [buildGroup(group.body, options)]);
-      // wrap, since CSS will center a .clap > .inner > span
-      inner = makeSpan(["inner"], [inner], options);
+      // wrap, since CSS will center a .clap > .katex-inner > span
+      inner = makeSpan(["katex-inner"], [inner], options);
     } else {
-      inner = makeSpan(["inner"], [buildGroup(group.body, options)]);
+      inner = makeSpan(["katex-inner"], [buildGroup(group.body, options)]);
     }
-    const fix = makeSpan(["fix"], []);
+    const fix = makeSpan(["katex-fix"], []);
     let node = makeSpan([group.alignment], [inner, fix], options);
 
     // At this point, we have correctly set horizontal alignment of the
@@ -12342,7 +12306,7 @@ defineFunction({
     // Next, use a strut to set the height of the HTML bounding box.
     // Otherwise, a tall argument may be misplaced.
     // This code resolved issue #1153
-    const strut = makeSpan(["strut"]);
+    const strut = makeSpan(["katex-strut"]);
     strut.style.height = makeEm(node.height + node.depth);
     if (node.depth) {
       strut.style.verticalAlign = makeEm(-node.depth);
@@ -12351,8 +12315,8 @@ defineFunction({
 
     // Next, prevent vertical misplacement when next to something tall.
     // This code resolves issue #1234
-    node = makeSpan(["thinbox"], [node], options);
-    return makeSpan(["mord", "vbox"], [node], options);
+    node = makeSpan(["katex-thinbox"], [node], options);
+    return makeSpan(["mord", "katex-vbox"], [node], options);
   },
   mathmlBuilder: (group, options) => {
     // mathllap, mathrlap, mathclap
@@ -12373,16 +12337,12 @@ defineFunction({
 defineFunction({
   type: "styling",
   names: ["\\(", "$"],
-  props: {
-    numArgs: 0,
-    allowedInText: true,
-    allowedInMath: false
-  },
+  numArgs: 0,
+  allowedInText: true,
+  allowedInMath: false,
   handler(_ref, args) {
-    let {
-      funcName,
-      parser
-    } = _ref;
+    let funcName = _ref.funcName,
+      parser = _ref.parser;
     const outerMode = parser.mode;
     parser.switchMode("math");
     const close = funcName === "\\(" ? "\\)" : "$";
@@ -12393,6 +12353,7 @@ defineFunction({
       type: "styling",
       mode: parser.mode,
       style: "text",
+      resetFont: true,
       body
     };
   }
@@ -12403,11 +12364,9 @@ defineFunction({
   type: "text",
   // Doesn't matter what this is.
   names: ["\\)", "\\]"],
-  props: {
-    numArgs: 0,
-    allowedInText: true,
-    allowedInMath: false
-  },
+  numArgs: 0,
+  allowedInText: true,
+  allowedInMath: false,
   handler(context, args) {
     throw new src_ParseError("Mismatched " + context.funcName);
   }
@@ -12435,14 +12394,10 @@ const chooseMathStyle = (group, options) => {
 defineFunction({
   type: "mathchoice",
   names: ["\\mathchoice"],
-  props: {
-    numArgs: 4,
-    primitive: true
-  },
+  numArgs: 4,
+  primitive: true,
   handler: (_ref, args) => {
-    let {
-      parser
-    } = _ref;
+    let parser = _ref.parser;
     return {
       type: "mathchoice",
       mode: parser.mode,
@@ -12627,6 +12582,9 @@ const op_htmlBuilder = (grp, options) => {
     large = true;
   }
   let base;
+  // Italic correction from the symbol glyph, captured before the symbol
+  // may be wrapped in a vlist (for \oiint/\oiiint).  Stays 0 for non-symbol ops.
+  let symbolItalic;
   if (group.symbol) {
     // If this is a symbol, create the symbol.
     const fontName = large ? "Size2-Regular" : "Size1-Regular";
@@ -12638,10 +12596,10 @@ const op_htmlBuilder = (grp, options) => {
       group.name = stash === "oiint" ? "\\iint" : "\\iiint";
     }
     base = makeSymbol(group.name, fontName, "math", options, ["mop", "op-symbol", large ? "large-op" : "small-op"]);
+    symbolItalic = base.italic;
     if (stash.length > 0) {
       // We're in \oiint or \oiiint. Overlay the oval.
       // TODO: When font glyphs are available, delete this code.
-      const italic = base.italic;
       const oval = staticSvg(stash + "Size" + (large ? "2" : "1"), options);
       base = makeVList({
         positionType: "individualShift",
@@ -12657,8 +12615,9 @@ const op_htmlBuilder = (grp, options) => {
       }, options);
       group.name = "\\" + stash;
       base.classes.unshift("mop");
-      // TODO(ts)
-      base.italic = italic;
+      // Carry the italic correction from the original symbol to the
+      // vlist wrapper so supsub can use it for subscript positioning.
+      base.italic = symbolItalic;
     }
   } else if (group.body) {
     // If this is a list, compose that list.
@@ -12683,6 +12642,7 @@ const op_htmlBuilder = (grp, options) => {
   let baseShift = 0;
   let slant = 0;
   if ((base instanceof SymbolNode || group.name === "\\oiint" || group.name === "\\oiiint") && !group.suppressBaseShift) {
+    var _base$italic;
     // We suppress the shift of the base of \overset and \underset. Otherwise,
     // shift the symbol so its center lies on the axis (rule 13). It
     // appears that our fonts have the centers of the symbols already
@@ -12692,8 +12652,9 @@ const op_htmlBuilder = (grp, options) => {
     baseShift = (base.height - base.depth) / 2 - options.fontMetrics().axisHeight;
 
     // The slant of the symbol is just its italic correction.
-    // TODO(ts)
-    slant = base.italic || 0;
+    // SymbolNode carries .italic natively; Span (for \oiint/\oiiint)
+    // only has it set when nonzero, so default to 0.
+    slant = (_base$italic = base.italic) != null ? _base$italic : 0;
   }
   if (hasLimits) {
     return assembleSupSub(base, supGroup, subGroup, options, style, slant, baseShift);
@@ -12748,14 +12709,10 @@ const singleCharBigOps = {
 defineFunction({
   type: "op",
   names: ["\\coprod", "\\bigvee", "\\bigwedge", "\\biguplus", "\\bigcap", "\\bigcup", "\\intop", "\\prod", "\\sum", "\\bigotimes", "\\bigoplus", "\\bigodot", "\\bigsqcup", "\\smallint", "\u220F", "\u2210", "\u2211", "\u22c0", "\u22c1", "\u22c2", "\u22c3", "\u2a00", "\u2a01", "\u2a02", "\u2a04", "\u2a06"],
-  props: {
-    numArgs: 0
-  },
+  numArgs: 0,
   handler: (_ref, args) => {
-    let {
-      parser,
-      funcName
-    } = _ref;
+    let parser = _ref.parser,
+      funcName = _ref.funcName;
     let fName = funcName;
     if (fName.length === 1) {
       fName = singleCharBigOps[fName];
@@ -12772,20 +12729,13 @@ defineFunction({
   htmlBuilder: op_htmlBuilder,
   mathmlBuilder: op_mathmlBuilder
 });
-
-// Note: calling defineFunction with a type that's already been defined only
-// works because the same htmlBuilder and mathmlBuilder are being used.
 defineFunction({
   type: "op",
   names: ["\\mathop"],
-  props: {
-    numArgs: 1,
-    primitive: true
-  },
+  numArgs: 1,
+  primitive: true,
   handler: (_ref2, args) => {
-    let {
-      parser
-    } = _ref2;
+    let parser = _ref2.parser;
     const body = args[0];
     return {
       type: "op",
@@ -12795,9 +12745,7 @@ defineFunction({
       symbol: false,
       body: ordargument(body)
     };
-  },
-  htmlBuilder: op_htmlBuilder,
-  mathmlBuilder: op_mathmlBuilder
+  }
 });
 
 // There are 2 flags for operators; whether they produce limits in
@@ -12816,14 +12764,10 @@ const singleCharIntegrals = {
 defineFunction({
   type: "op",
   names: ["\\arcsin", "\\arccos", "\\arctan", "\\arctg", "\\arcctg", "\\arg", "\\ch", "\\cos", "\\cosec", "\\cosh", "\\cot", "\\cotg", "\\coth", "\\csc", "\\ctg", "\\cth", "\\deg", "\\dim", "\\exp", "\\hom", "\\ker", "\\lg", "\\ln", "\\log", "\\sec", "\\sin", "\\sinh", "\\sh", "\\tan", "\\tanh", "\\tg", "\\th"],
-  props: {
-    numArgs: 0
-  },
+  numArgs: 0,
   handler(_ref3) {
-    let {
-      parser,
-      funcName
-    } = _ref3;
+    let parser = _ref3.parser,
+      funcName = _ref3.funcName;
     return {
       type: "op",
       mode: parser.mode,
@@ -12832,23 +12776,17 @@ defineFunction({
       symbol: false,
       name: funcName
     };
-  },
-  htmlBuilder: op_htmlBuilder,
-  mathmlBuilder: op_mathmlBuilder
+  }
 });
 
 // Limits, not symbols
 defineFunction({
   type: "op",
   names: ["\\det", "\\gcd", "\\inf", "\\lim", "\\max", "\\min", "\\Pr", "\\sup"],
-  props: {
-    numArgs: 0
-  },
+  numArgs: 0,
   handler(_ref4) {
-    let {
-      parser,
-      funcName
-    } = _ref4;
+    let parser = _ref4.parser,
+      funcName = _ref4.funcName;
     return {
       type: "op",
       mode: parser.mode,
@@ -12857,24 +12795,18 @@ defineFunction({
       symbol: false,
       name: funcName
     };
-  },
-  htmlBuilder: op_htmlBuilder,
-  mathmlBuilder: op_mathmlBuilder
+  }
 });
 
 // No limits, symbols
 defineFunction({
   type: "op",
   names: ["\\int", "\\iint", "\\iiint", "\\oint", "\\oiint", "\\oiiint", "\u222b", "\u222c", "\u222d", "\u222e", "\u222f", "\u2230"],
-  props: {
-    numArgs: 0,
-    allowedInArgument: true
-  },
+  numArgs: 0,
+  allowedInArgument: true,
   handler(_ref5) {
-    let {
-      parser,
-      funcName
-    } = _ref5;
+    let parser = _ref5.parser,
+      funcName = _ref5.funcName;
     let fName = funcName;
     if (fName.length === 1) {
       fName = singleCharIntegrals[fName];
@@ -12887,9 +12819,7 @@ defineFunction({
       symbol: true,
       name: fName
     };
-  },
-  htmlBuilder: op_htmlBuilder,
-  mathmlBuilder: op_mathmlBuilder
+  }
 });
 ;// ./src/functions/operatorname.ts
 
@@ -13014,14 +12944,10 @@ const operatorname_mathmlBuilder = (group, options) => {
 defineFunction({
   type: "operatorname",
   names: ["\\operatorname@", "\\operatornamewithlimits"],
-  props: {
-    numArgs: 1
-  },
+  numArgs: 1,
   handler: (_ref, args) => {
-    let {
-      parser,
-      funcName
-    } = _ref;
+    let parser = _ref.parser,
+      funcName = _ref.funcName;
     const body = args[0];
     return {
       type: "operatorname",
@@ -13062,13 +12988,9 @@ defineFunctionBuilders({
 defineFunction({
   type: "overline",
   names: ["\\overline"],
-  props: {
-    numArgs: 1
-  },
+  numArgs: 1,
   handler(_ref, args) {
-    let {
-      parser
-    } = _ref;
+    let parser = _ref.parser;
     const body = args[0];
     return {
       type: "overline",
@@ -13103,7 +13025,7 @@ defineFunction({
         size: defaultRuleThickness
       }]
     }, options);
-    return makeSpan(["mord", "overline"], [vlist], options);
+    return makeSpan(["mord", "katex-overline"], [vlist], options);
   },
   mathmlBuilder(group, options) {
     const operator = new MathNode("mo", [new TextNode("\u203e")]);
@@ -13123,14 +13045,10 @@ defineFunction({
 defineFunction({
   type: "phantom",
   names: ["\\phantom"],
-  props: {
-    numArgs: 1,
-    allowedInText: true
-  },
+  numArgs: 1,
+  allowedInText: true,
   handler: (_ref, args) => {
-    let {
-      parser
-    } = _ref;
+    let parser = _ref.parser;
     const body = args[0];
     return {
       type: "phantom",
@@ -13154,14 +13072,10 @@ defineMacro("\\hphantom", "\\smash{\\phantom{#1}}");
 defineFunction({
   type: "vphantom",
   names: ["\\vphantom"],
-  props: {
-    numArgs: 1,
-    allowedInText: true
-  },
+  numArgs: 1,
+  allowedInText: true,
   handler: (_ref2, args) => {
-    let {
-      parser
-    } = _ref2;
+    let parser = _ref2.parser;
     const body = args[0];
     return {
       type: "vphantom",
@@ -13170,8 +13084,8 @@ defineFunction({
     };
   },
   htmlBuilder: (group, options) => {
-    const inner = makeSpan(["inner"], [buildGroup(group.body, options.withPhantom())]);
-    const fix = makeSpan(["fix"], []);
+    const inner = makeSpan(["katex-inner"], [buildGroup(group.body, options.withPhantom())]);
+    const fix = makeSpan(["katex-fix"], []);
     return makeSpan(["mord", "rlap"], [inner, fix], options);
   },
   mathmlBuilder: (group, options) => {
@@ -13195,15 +13109,11 @@ defineFunction({
 defineFunction({
   type: "raisebox",
   names: ["\\raisebox"],
-  props: {
-    numArgs: 2,
-    argTypes: ["size", "hbox"],
-    allowedInText: true
-  },
+  numArgs: 2,
+  argTypes: ["size", "hbox"],
+  allowedInText: true,
   handler(_ref, args) {
-    let {
-      parser
-    } = _ref;
+    let parser = _ref.parser;
     const amount = assertNodeType(args[0], "size").value;
     const body = args[1];
     return {
@@ -13232,20 +13142,53 @@ defineFunction({
     return node;
   }
 });
+;// ./src/functions/reflectbox.ts
+
+
+
+
+const handler = (_ref, args) => {
+  let parser = _ref.parser;
+  return {
+    type: "reflectbox",
+    mode: parser.mode,
+    body: args[0]
+  };
+};
+defineFunction({
+  type: "reflectbox",
+  names: ["\\reflectbox"],
+  numArgs: 1,
+  argTypes: ["hbox"],
+  allowedInText: true,
+  handler,
+  htmlBuilder(group, options) {
+    return makeSpan(["mord", "reflectbox"], [buildGroup(group.body, options)], options);
+  },
+  mathmlBuilder(group, options) {
+    return buildMathML_buildGroup(group.body, options);
+  }
+});
+
+// Parse math directly so the shared builders inherit the surrounding style.
+// \reflectbox instead uses an hbox argument for LaTeX's text-box behavior.
+defineFunction({
+  type: "reflectbox",
+  names: ["\\mathreflectbox"],
+  numArgs: 1,
+  argTypes: ["math"],
+  handler
+});
 ;// ./src/functions/relax.ts
 
 defineFunction({
   type: "internal",
   names: ["\\relax"],
-  props: {
-    numArgs: 0,
-    allowedInText: true,
-    allowedInArgument: true
-  },
+  numArgs: 0,
+  allowedInText: true,
+  allowedInArgument: true,
   handler(_ref) {
-    let {
-      parser
-    } = _ref;
+    let parser = _ref.parser;
     return {
       type: "internal",
       mode: parser.mode
@@ -13261,17 +13204,13 @@ defineFunction({
 defineFunction({
   type: "rule",
   names: ["\\rule"],
-  props: {
-    numArgs: 2,
-    numOptionalArgs: 1,
-    allowedInText: true,
-    allowedInMath: true,
-    argTypes: ["size", "size", "size"]
-  },
+  numArgs: 2,
+  numOptionalArgs: 1,
+  allowedInText: true,
+  allowedInMath: true,
+  argTypes: ["size", "size", "size"],
   handler(_ref, args, optArgs) {
-    let {
-      parser
-    } = _ref;
+    let parser = _ref.parser;
     const shift = optArgs[0];
     const width = assertNodeType(args[0], "size");
     const height = assertNodeType(args[1], "size");
@@ -13285,7 +13224,7 @@ defineFunction({
   },
   htmlBuilder(group, options) {
     // Make an empty span for the rule
-    const rule = makeSpan(["mord", "rule"], [], options);
+    const rule = makeSpan(["mord", "katex-rule"], [], options);
 
     // Calculate the shift, width, and height of the rule, and account for units
     const width = calculateSize(group.width, options);
@@ -13341,7 +13280,7 @@ function sizingGroup(value, options, baseOptions) {
   // Add size-resetting classes to the inner list and set maxFontSize
   // manually. Handle nested size changes.
   for (let i = 0; i < inner.length; i++) {
-    const pos = inner[i].classes.indexOf("sizing");
+    const pos = inner[i].classes.indexOf("katex-sizing");
     if (pos < 0) {
       Array.prototype.push.apply(inner[i].classes, options.sizingClasses(baseOptions));
     } else if (inner[i].classes[pos + 1] === "reset-size" + options.size) {
@@ -13366,16 +13305,12 @@ const sizing_htmlBuilder = (group, options) => {
 defineFunction({
   type: "sizing",
   names: sizeFuncs,
-  props: {
-    numArgs: 0,
-    allowedInText: true
-  },
+  numArgs: 0,
+  allowedInText: true,
   handler: (_ref, args) => {
-    let {
-      breakOnTokenText,
-      funcName,
-      parser
-    } = _ref;
+    let breakOnTokenText = _ref.breakOnTokenText,
+      funcName = _ref.funcName,
+      parser = _ref.parser;
     const body = parser.parseExpression(false, breakOnTokenText);
     return {
       type: "sizing",
@@ -13411,15 +13346,11 @@ defineFunction({
 defineFunction({
   type: "smash",
   names: ["\\smash"],
-  props: {
-    numArgs: 1,
-    numOptionalArgs: 1,
-    allowedInText: true
-  },
+  numArgs: 1,
+  numOptionalArgs: 1,
+  allowedInText: true,
   handler: (_ref, args, optArgs) => {
-    let {
-      parser
-    } = _ref;
+    let parser = _ref.parser;
     let smashHeight = false;
     let smashDepth = false;
     const tbArg = optArgs[0] && assertNodeType(optArgs[0], "ordgroup");
@@ -13427,7 +13358,7 @@ defineFunction({
       // Optional [tb] argument is engaged.
       // ref: amsmath: \renewcommand{\smash}[1][tb]{%
       //               def\mb@t{\ht}\def\mb@b{\dp}\def\mb@tb{\ht\z@\z@\dp}%
-      let letter = "";
+      let letter;
       for (let i = 0; i < tbArg.body.length; ++i) {
         const node = tbArg.body[i];
         letter = assertSymbolNodeType(node).text;
@@ -13467,7 +13398,7 @@ defineFunction({
     }
     if (group.smashHeight && group.smashDepth) {
       // Symmetric \smash can stay in inline layout.
-      return makeSpan(["mord", "smash"], [node], options);
+      return makeSpan(["mord", "katex-smash"], [node], options);
     }
 
     // In order to influence makeVList for asymmetric smashing, we have to
@@ -13522,14 +13453,10 @@ defineFunction({
 defineFunction({
   type: "sqrt",
   names: ["\\sqrt"],
-  props: {
-    numArgs: 1,
-    numOptionalArgs: 1
-  },
+  numArgs: 1,
+  numOptionalArgs: 1,
   handler(_ref, args, optArgs) {
-    let {
-      parser
-    } = _ref;
+    let parser = _ref.parser;
     const index = optArgs[0];
     const body = args[0];
     return {
@@ -13567,11 +13494,10 @@ defineFunction({
     const minDelimiterHeight = inner.height + inner.depth + lineClearance + theta;
 
     // Create a sqrt SVG of the required minimum size
-    const {
-      span: img,
-      ruleWidth,
-      advanceWidth
-    } = makeSqrtImage(minDelimiterHeight, options);
+    const _makeSqrtImage = makeSqrtImage(minDelimiterHeight, options),
+      img = _makeSqrtImage.span,
+      ruleWidth = _makeSqrtImage.ruleWidth,
+      advanceWidth = _makeSqrtImage.advanceWidth;
     const delimDepth = img.height - ruleWidth;
 
     // Adjust the clearance based on the delimiter size
@@ -13625,15 +13551,13 @@ defineFunction({
       }, options);
       // Add a class surrounding it so we can add on the appropriate
       // kerning
-      const rootVListWrap = makeSpan(["root"], [rootVList]);
+      const rootVListWrap = makeSpan(["katex-root"], [rootVList]);
       return makeSpan(["mord", "sqrt"], [rootVListWrap, body], options);
     }
   },
   mathmlBuilder(group, options) {
-    const {
-      body,
-      index
-    } = group;
+    const body = group.body,
+      index = group.index;
     return index ? new MathNode("mroot", [buildMathML_buildGroup(body, options), buildMathML_buildGroup(index, options)]) : new MathNode("msqrt", [buildMathML_buildGroup(body, options)]);
   }
 });
@@ -13649,27 +13573,28 @@ const styling_styleMap = {
   "script": src_Style.SCRIPT,
   "scriptscript": src_Style.SCRIPTSCRIPT
 };
+function isStyleStr(s) {
+  return s in styling_styleMap;
+}
 defineFunction({
   type: "styling",
   names: ["\\displaystyle", "\\textstyle", "\\scriptstyle", "\\scriptscriptstyle"],
-  props: {
-    numArgs: 0,
-    allowedInText: true,
-    primitive: true
-  },
+  numArgs: 0,
+  allowedInText: true,
+  primitive: true,
   handler(_ref, args) {
-    let {
-      breakOnTokenText,
-      funcName,
-      parser
-    } = _ref;
+    let breakOnTokenText = _ref.breakOnTokenText,
+      funcName = _ref.funcName,
+      parser = _ref.parser;
     // parse out the implicit body
     const body = parser.parseExpression(true, breakOnTokenText);
 
     // TODO: Refactor to avoid duplicating styleMap in multiple places (e.g.
     // here and in buildHTML and de-dupe the enumeration of all the styles).
-    // TODO(ts): The names above exactly match the styles.
     const style = funcName.slice(1, funcName.length - 5);
+    if (!isStyleStr(style)) {
+      throw new Error("Unknown style: " + style);
+    }
     return {
       type: "styling",
       mode: parser.mode,
@@ -13682,13 +13607,19 @@ defineFunction({
   htmlBuilder(group, options) {
     // Style changes are handled in the TeXbook on pg. 442, Rule 3.
     const newStyle = styling_styleMap[group.style];
-    const newOptions = options.havingStyle(newStyle).withFont('');
+    let newOptions = options.havingStyle(newStyle);
+    if (group.resetFont) {
+      newOptions = newOptions.withFont('');
+    }
     return sizingGroup(group.body, newOptions, options);
   },
   mathmlBuilder(group, options) {
     // Figure out what style we're changing to.
     const newStyle = styling_styleMap[group.style];
-    const newOptions = options.havingStyle(newStyle);
+    let newOptions = options.havingStyle(newStyle);
+    if (group.resetFont) {
+      newOptions = newOptions.withFont('');
+    }
     const inner = buildMathML_buildExpression(group.body, newOptions);
     const node = new MathNode("mstyle", inner);
     const styleAttributes = {
@@ -13724,7 +13655,9 @@ defineFunction({
  * its inner element should handle the superscripts and subscripts instead of
  * handling them itself.
  */
-const htmlBuilderDelegate = function (group, options) {
+const htmlBuilderDelegate = function (group, options
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+) {
   const base = group.base;
   if (!base) {
     return null;
@@ -13760,11 +13693,9 @@ defineFunctionBuilders({
     if (builderDelegate) {
       return builderDelegate(group, options);
     }
-    const {
-      base: valueBase,
-      sup: valueSup,
-      sub: valueSub
-    } = group;
+    const valueBase = group.base,
+      valueSup = group.sup,
+      valueSub = group.sub;
     const base = buildGroup(valueBase, options);
     let supm;
     let subm;
@@ -13810,8 +13741,10 @@ defineFunctionBuilders({
       // amount. Note we only do this when the base is a single symbol.
       const isOiint = group.base && group.base.type === "op" && group.base.name && (group.base.name === "\\oiint" || group.base.name === "\\oiiint");
       if (base instanceof SymbolNode || isOiint) {
-        // @ts-ignore
-        marginLeft = makeEm(-base.italic);
+        var _italic;
+        // SymbolNode has .italic natively; for \oiint/\oiiint the
+        // op builder stores .italic on the wrapping Span.
+        marginLeft = makeEm(-((_italic = base.italic) != null ? _italic : 0));
       }
     }
     let supsub;
@@ -13982,7 +13915,7 @@ const defaultVariant = {
 defineFunctionBuilders({
   type: "mathord",
   htmlBuilder(group, options) {
-    return makeOrd(group, options, "mathord");
+    return makeOrd(group, options);
   },
   mathmlBuilder(group, options) {
     const node = new MathNode("mi", [makeText(group.text, group.mode, options)]);
@@ -13996,7 +13929,7 @@ defineFunctionBuilders({
 defineFunctionBuilders({
   type: "textord",
   htmlBuilder(group, options) {
-    return makeOrd(group, options, "textord");
+    return makeOrd(group, options);
   },
   mathmlBuilder(group, options) {
     const text = makeText(group.text, group.mode, options);
@@ -14024,57 +13957,50 @@ defineFunctionBuilders({
 
 
 // A map of CSS-based spacing functions to their CSS class.
-const cssSpace = {
-  "\\nobreak": "nobreak",
-  "\\allowbreak": "allowbreak"
-};
+const cssSpace = new Map([["\\nobreak", "nobreak"], ["\\allowbreak", "allowbreak"]]);
 
 // A lookup table to determine whether a spacing function/symbol should be
 // treated like a regular space character.  If a symbol or command is a key
 // in this table, then it should be a regular space character.  Furthermore,
 // the associated value may have a `className` specifying an extra CSS class
 // to add to the created `span`.
-const regularSpace = {
-  " ": {},
-  "\\ ": {},
-  "~": {
-    className: "nobreak"
-  },
-  "\\space": {},
-  "\\nobreakspace": {
-    className: "nobreak"
-  }
-};
+const regularSpace = new Map([[" ", {}], ["\\ ", {}], ["~", {
+  className: "nobreak"
+}], ["\\space", {}], ["\\nobreakspace", {
+  className: "nobreak"
+}]]);
 
 // ParseNode<"spacing"> created in Parser.js from the "spacing" symbol Groups in
 // src/symbols.js.
 defineFunctionBuilders({
   type: "spacing",
   htmlBuilder(group, options) {
-    if (regularSpace.hasOwnProperty(group.text)) {
-      const className = regularSpace[group.text].className || "";
+    const regularSpaceItem = regularSpace.get(group.text);
+    const cssSpaceClass = cssSpace.get(group.text);
+    if (regularSpaceItem) {
+      const className = regularSpaceItem.className || "";
       // Spaces are generated by adding an actual space. Each of these
       // things has an entry in the symbols table, so these will be turned
       // into appropriate outputs.
       if (group.mode === "text") {
-        const ord = makeOrd(group, options, "textord");
+        const ord = makeOrd(group, options);
         ord.classes.push(className);
         return ord;
       } else {
         return makeSpan(["mspace", className], [mathsym(group.text, group.mode, options)], options);
       }
-    } else if (cssSpace.hasOwnProperty(group.text)) {
+    } else if (cssSpaceClass) {
       // Spaces based on just a CSS class.
-      return makeSpan(["mspace", cssSpace[group.text]], [], options);
+      return makeSpan(["mspace", cssSpaceClass], [], options);
     } else {
       throw new src_ParseError("Unknown type of space \"" + group.text + "\"");
     }
   },
   mathmlBuilder(group, options) {
     let node;
-    if (regularSpace.hasOwnProperty(group.text)) {
+    if (regularSpace.has(group.text)) {
       node = new MathNode("mtext", [new TextNode("\u00a0")]);
-    } else if (cssSpace.hasOwnProperty(group.text)) {
+    } else if (cssSpace.has(group.text)) {
       // CSS-based MathML spaces (\nobreak, \allowbreak) are ignored
       return new MathNode("mspace");
     } else {
@@ -14152,17 +14078,13 @@ defineFunction({
   "\\textbf", "\\textmd",
   // Font Shapes
   "\\textit", "\\textup", "\\emph"],
-  props: {
-    numArgs: 1,
-    argTypes: ["text"],
-    allowedInArgument: true,
-    allowedInText: true
-  },
+  numArgs: 1,
+  argTypes: ["text"],
+  allowedInArgument: true,
+  allowedInText: true,
   handler(_ref, args) {
-    let {
-      parser,
-      funcName
-    } = _ref;
+    let parser = _ref.parser,
+      funcName = _ref.funcName;
     const body = args[0];
     return {
       type: "text",
@@ -14190,14 +14112,10 @@ defineFunction({
 defineFunction({
   type: "underline",
   names: ["\\underline"],
-  props: {
-    numArgs: 1,
-    allowedInText: true
-  },
+  numArgs: 1,
+  allowedInText: true,
   handler(_ref, args) {
-    let {
-      parser
-    } = _ref;
+    let parser = _ref.parser;
     return {
       type: "underline",
       mode: parser.mode,
@@ -14231,7 +14149,7 @@ defineFunction({
         elem: innerGroup
       }]
     }, options);
-    return makeSpan(["mord", "underline"], [vlist], options);
+    return makeSpan(["mord", "katex-underline"], [vlist], options);
   },
   mathmlBuilder(group, options) {
     const operator = new MathNode("mo", [new TextNode("\u203e")]);
@@ -14253,16 +14171,12 @@ defineFunction({
 defineFunction({
   type: "vcenter",
   names: ["\\vcenter"],
-  props: {
-    numArgs: 1,
-    argTypes: ["original"],
-    // In LaTeX, \vcenter can act only on a box.
-    allowedInText: false
-  },
+  numArgs: 1,
+  argTypes: ["original"],
+  // In LaTeX, \vcenter can act only on a box.
+  allowedInText: false,
   handler(_ref, args) {
-    let {
-      parser
-    } = _ref;
+    let parser = _ref.parser;
     return {
       type: "vcenter",
       mode: parser.mode,
@@ -14299,10 +14213,8 @@ defineFunction({
 defineFunction({
   type: "verb",
   names: ["\\verb"],
-  props: {
-    numArgs: 0,
-    allowedInText: true
-  },
+  numArgs: 0,
+  allowedInText: true,
   handler(context, args, optArgs) {
     // \verb and \verb* are dealt with directly in Parser.js.
     // If we end up here, it's because of a failure to match the two delimiters
@@ -14347,6 +14259,7 @@ const functions = _functions;
 
 // TODO(kevinb): have functions return an object and call defineFunction with
 // that object in this file instead of relying on side-effects.
+
 
 
 
@@ -14457,10 +14370,13 @@ combiningDiacriticalMarkString + "*") +
 
 /** Main Lexer class */
 class Lexer {
-  // Category codes. The lexer only supports comment characters (14) for now.
-  // MacroExpander additionally distinguishes active (13).
-
   constructor(input, settings) {
+    this.input = void 0;
+    this.settings = void 0;
+    this.tokenRegex = void 0;
+    // Category codes. The lexer only supports comment characters (14) for now.
+    // MacroExpander additionally distinguishes active (13).
+    this.catcodes = void 0;
     // Separate accents from characters
     this.input = input;
     this.settings = settings;
@@ -14527,6 +14443,9 @@ class Namespace {
     if (globalMacros === void 0) {
       globalMacros = {};
     }
+    this.current = void 0;
+    this.builtins = void 0;
+    this.undefStack = void 0;
     this.current = globalMacros;
     this.builtins = builtins;
     this.undefStack = [];
@@ -14547,13 +14466,11 @@ class Namespace {
       throw new src_ParseError("Unbalanced namespace destruction: attempt " + "to pop global namespace; please report this as a bug");
     }
     const undefs = this.undefStack.pop();
-    for (const undef in undefs) {
-      if (undefs.hasOwnProperty(undef)) {
-        if (undefs[undef] == null) {
-          delete this.current[undef];
-        } else {
-          this.current[undef] = undefs[undef];
-        }
+    for (const key of Object.keys(undefs)) {
+      if (undefs[key] === undefined) {
+        delete this.current[key];
+      } else {
+        this.current[key] = undefs[key];
       }
     }
   }
@@ -14573,7 +14490,7 @@ class Namespace {
    * `get(name) != null`.
    */
   has(name) {
-    return this.current.hasOwnProperty(name) || this.builtins.hasOwnProperty(name);
+    return Object.prototype.hasOwnProperty.call(this.current, name) || Object.prototype.hasOwnProperty.call(this.builtins, name);
   }
 
   /**
@@ -14585,10 +14502,12 @@ class Namespace {
    * `if (namespace.has(...))`.
    */
   get(name) {
-    if (this.current.hasOwnProperty(name)) {
+    if (Object.prototype.hasOwnProperty.call(this.current, name)) {
       return this.current[name];
-    } else {
+    } else if (Object.prototype.hasOwnProperty.call(this.builtins, name)) {
       return this.builtins[name];
+    } else {
+      return undefined;
     }
   }
 
@@ -14619,8 +14538,8 @@ class Namespace {
       // unless an undo is already in place, in which case that older
       // value is the correct one.
       const top = this.undefStack[this.undefStack.length - 1];
-      if (top && !top.hasOwnProperty(name)) {
-        top[name] = this.current[name];
+      if (top && !Object.prototype.hasOwnProperty.call(top, name)) {
+        top[name] = Object.prototype.hasOwnProperty.call(this.current, name) ? this.current[name] : undefined;
       }
     }
     if (value == null) {
@@ -15390,6 +15309,8 @@ defineMacro("\u27e7", "\\rrbracket"); // blackboard bold ]
 
 defineMacro("\\lBrace", "\\html@mathml{" + "\\mathopen{\\{\\mkern-3.2mu[}}" + "{\\mathopen{\\char`\u2983}}");
 defineMacro("\\rBrace", "\\html@mathml{" + "\\mathclose{]\\mkern-3.2mu\\}}}" + "{\\mathclose{\\char`\u2984}}");
+defineMacro("↤", "\\mapsfrom");
+defineMacro("\\mapsfrom", "\\html@mathml{\\mathrel{\\mathreflectbox{\\mapsto}}}{\\mathrel{\\char`↤}}");
 defineMacro("\u2983", "\\lBrace"); // blackboard bold {
 defineMacro("\u2984", "\\rBrace"); // blackboard bold }
 
@@ -15630,6 +15551,12 @@ const implicitCommands = {
 };
 class MacroExpander {
   constructor(input, settings, mode) {
+    this.settings = void 0;
+    this.expansionCount = void 0;
+    this.lexer = void 0;
+    this.macros = void 0;
+    this.stack = void 0;
+    this.mode = void 0;
     this.settings = settings;
     this.expansionCount = 0;
     this.feed(input);
@@ -15724,16 +15651,14 @@ class MacroExpander {
         return null;
       }
       start = this.popToken(); // don't include [ in tokens
-      ({
-        tokens,
-        end
-      } = this.consumeArg(["]"]));
+      var _this$consumeArg = this.consumeArg(["]"]);
+      tokens = _this$consumeArg.tokens;
+      end = _this$consumeArg.end;
     } else {
-      ({
-        tokens,
-        start,
-        end
-      } = this.consumeArg());
+      var _this$consumeArg2 = this.consumeArg();
+      tokens = _this$consumeArg2.tokens;
+      start = _this$consumeArg2.start;
+      end = _this$consumeArg2.end;
     }
 
     // indicate the end of an argument
@@ -16044,7 +15969,7 @@ class MacroExpander {
    * `implicitCommands`.
    */
   isDefined(name) {
-    return this.macros.has(name) || src_functions.hasOwnProperty(name) || src_symbols.math.hasOwnProperty(name) || src_symbols.text.hasOwnProperty(name) || implicitCommands.hasOwnProperty(name);
+    return this.macros.has(name) || Object.prototype.hasOwnProperty.call(src_functions, name) || Object.prototype.hasOwnProperty.call(src_symbols.math, name) || Object.prototype.hasOwnProperty.call(src_symbols.text, name) || Object.prototype.hasOwnProperty.call(implicitCommands, name);
   }
 
   /**
@@ -16052,7 +15977,10 @@ class MacroExpander {
    */
   isExpandable(name) {
     const macro = this.macros.get(name);
-    return macro != null ? typeof macro === "string" || typeof macro === "function" || !macro.unexpandable : src_functions.hasOwnProperty(name) && !src_functions[name].primitive;
+    if (macro != null) {
+      return typeof macro === "string" || typeof macro === "function" || !macro.unexpandable;
+    }
+    return Object.prototype.hasOwnProperty.call(src_functions, name) && !src_functions[name].primitive;
   }
 }
 ;// ./src/unicodeSupOrSub.ts
@@ -16165,6 +16093,7 @@ const uSubsAndSups = Object.freeze({
 });
 ;// ./src/Parser.ts
 /* eslint no-constant-condition:0 */
+
 
 
 
@@ -16603,6 +16532,11 @@ const unicodeSymbols = {
 
 class Parser {
   constructor(input, settings) {
+    this.mode = void 0;
+    this.gullet = void 0;
+    this.settings = void 0;
+    this.leftrightDepth = void 0;
+    this.nextToken = void 0;
     // Start in math mode
     this.mode = "math";
     // Create a new macro expander (gullet) and (indirectly via that) also a
@@ -16870,7 +16804,7 @@ class Parser {
     const base = this.parseGroup("atom", breakOnTokenText);
 
     // Internal nodes (e.g. \relax) cannot support super/subscripts.
-    // Instead we will pick up super/subscripts with blank base next round.
+    // Instead, we will pick up super/subscripts with blank base next round.
     if ((base == null ? void 0 : base.type) === "internal") {
       return base;
     }
@@ -16879,9 +16813,6 @@ class Parser {
     if (this.mode === "text") {
       return base;
     }
-
-    // Note that base may be empty (i.e. null) at this point.
-
     let superscript;
     let subscript;
     while (true) {
@@ -16893,8 +16824,7 @@ class Parser {
       if (lex.text === "\\limits" || lex.text === "\\nolimits") {
         // We got a limit control
         if (base && base.type === "op") {
-          const limits = lex.text === "\\limits";
-          base.limits = limits;
+          base.limits = lex.text === "\\limits";
           base.alwaysHandleSupSub = true;
         } else if (base && base.type === "operatorname") {
           if (base.alwaysHandleSupSub) {
@@ -16991,13 +16921,26 @@ class Parser {
 
     // Base must be set if superscript or subscript are set per logic above,
     // but need to check here for type check to pass.
-    if (superscript || subscript) {
-      // If we got either a superscript or subscript, create a supsub
+    if (superscript && subscript) {
       return {
         type: "supsub",
         mode: this.mode,
-        base: base,
+        base,
         sup: superscript,
+        sub: subscript
+      };
+    } else if (superscript) {
+      return {
+        type: "supsub",
+        mode: this.mode,
+        base,
+        sup: superscript
+      };
+    } else if (subscript) {
+      return {
+        type: "supsub",
+        mode: this.mode,
+        base,
         sub: subscript
       };
     } else {
@@ -17021,15 +16964,16 @@ class Parser {
 
     if (name && name !== "atom" && !funcData.allowedInArgument) {
       throw new src_ParseError("Got function '" + func + "' with no arguments" + (name ? " as " + name : ""), token);
+      // Treat undefined allowedInText as false.
     } else if (this.mode === "text" && !funcData.allowedInText) {
       throw new src_ParseError("Can't use function '" + func + "' in text mode", token);
+      // Treat undefined allowedInMath as true.
     } else if (this.mode === "math" && funcData.allowedInMath === false) {
       throw new src_ParseError("Can't use function '" + func + "' in math mode", token);
     }
-    const {
-      args,
-      optArgs
-    } = this.parseArguments(func, funcData);
+    const _this$parseArguments = this.parseArguments(func, funcData),
+      args = _this$parseArguments.args,
+      optArgs = _this$parseArguments.optArgs;
     return this.callFunction(func, args, optArgs, token, breakOnTokenText);
   }
 
@@ -17057,7 +17001,9 @@ class Parser {
   parseArguments(func,
   // Should look like "\name" or "\begin{name}".
   funcData) {
-    const totalArgs = funcData.numArgs + funcData.numOptionalArgs;
+    var _funcData$numOptional;
+    const numOptionalArgs = (_funcData$numOptional = funcData.numOptionalArgs) != null ? _funcData$numOptional : 0;
+    const totalArgs = funcData.numArgs + numOptionalArgs;
     if (totalArgs === 0) {
       return {
         args: [],
@@ -17067,8 +17013,9 @@ class Parser {
     const args = [];
     const optArgs = [];
     for (let i = 0; i < totalArgs; i++) {
-      let argType = funcData.argTypes && funcData.argTypes[i];
-      const isOptional = i < funcData.numOptionalArgs;
+      var _funcData$argTypes;
+      let argType = (_funcData$argTypes = funcData.argTypes) == null ? void 0 : _funcData$argTypes[i];
+      const isOptional = i < numOptionalArgs;
       if ("primitive" in funcData && funcData.primitive && argType == null ||
       // \sqrt expands into primitive if optional argument doesn't exist
       funcData.type === "sqrt" && i === 1 && optArgs[0] == null) {
@@ -17107,18 +17054,21 @@ class Parser {
       case "hbox":
         {
           // hbox argument type wraps the argument in the equivalent of
-          // \hbox, which is like \text but switching to \textstyle size.
+          // \hbox, which is like \text but switching to \textstyle size
+          // and resetting math font.
           const group = this.parseArgumentGroup(optional, "text");
           return group != null ? {
             type: "styling",
             mode: group.mode,
             body: [group],
-            style: "text" // simulate \textstyle
+            style: "text",
+            // simulate \textstyle
+            resetFont: true
           } : null;
         }
       case "raw":
         {
-          const token = this.parseStringGroup("raw", optional);
+          const token = this.parseStringGroup(optional);
           return token != null ? {
             type: "raw",
             mode: "text",
@@ -17137,7 +17087,6 @@ class Parser {
           return group;
         }
       case "original":
-      case null:
       case undefined:
         return this.parseArgumentGroup(optional);
       default:
@@ -17158,9 +17107,7 @@ class Parser {
    * Parses a group, essentially returning the string formed by the
    * brace-enclosed tokens plus some position information.
    */
-  parseStringGroup(modeName,
-  // Used to describe the mode in error messages.
-  optional) {
+  parseStringGroup(optional) {
     const argToken = this.gullet.scanArgument(optional);
     if (argToken == null) {
       return null;
@@ -17202,7 +17149,7 @@ class Parser {
    * Parses a color description.
    */
   parseColorGroup(optional) {
-    const res = this.parseStringGroup("color", optional);
+    const res = this.parseStringGroup(optional);
     if (res == null) {
       return null;
     }
@@ -17235,7 +17182,7 @@ class Parser {
     if (!optional && this.gullet.future().text !== "{") {
       res = this.parseRegexGroup(/^[-+]? *(?:$|\d+|\d+\.\d*|\.\d*) *[a-z]{0,2} *$/, "size");
     } else {
-      res = this.parseStringGroup("size", optional);
+      res = this.parseStringGroup(optional);
     }
     if (!res) {
       return null;
@@ -17274,7 +17221,7 @@ class Parser {
   parseUrlGroup(optional) {
     this.gullet.lexer.setCatcode("%", 13); // active character
     this.gullet.lexer.setCatcode("~", 12); // other character
-    const res = this.parseStringGroup("url", optional);
+    const res = this.parseStringGroup(optional);
     this.gullet.lexer.setCatcode("%", 14); // comment character
     this.gullet.lexer.setCatcode("~", 13); // active character
     if (res == null) {
@@ -17360,7 +17307,7 @@ class Parser {
       // If there exists a function with this name, parse the function.
       // Otherwise, just return a nucleus
       result = this.parseFunction(breakOnTokenText, name) || this.parseSymbol();
-      if (result == null && text[0] === "\\" && !implicitCommands.hasOwnProperty(text)) {
+      if (result == null && text[0] === "\\" && !Object.prototype.hasOwnProperty.call(implicitCommands, text)) {
         if (this.settings.throwOnError) {
           throw new src_ParseError("Undefined control sequence: " + text, firstToken);
         }
@@ -17453,7 +17400,7 @@ class Parser {
     }
     // At this point, we should have a symbol, possibly with accents.
     // First expand any accented base symbol according to unicodeSymbols.
-    if (unicodeSymbols.hasOwnProperty(text[0]) && !src_symbols[this.mode][text[0]]) {
+    if (Object.prototype.hasOwnProperty.call(unicodeSymbols, text[0]) && !src_symbols[this.mode][text[0]]) {
       // This behavior is not strict (XeTeX-compatible) in math mode.
       if (this.settings.strict && this.mode === "math") {
         this.settings.reportNonstrict("unicodeTextInMathMode", "Accented Unicode text character \"" + text[0] + "\" used in " + "math mode", nucleus);
@@ -17479,18 +17426,15 @@ class Parser {
       const group = src_symbols[this.mode][text].group;
       const loc = SourceLocation.range(nucleus);
       let s;
-      if (ATOMS.hasOwnProperty(group)) {
-        // TODO(ts)
-        const family = group;
+      if (isAtom(group)) {
         s = {
           type: "atom",
           mode: this.mode,
-          family,
+          family: group,
           loc,
           text
         };
       } else {
-        // TODO(ts)
         s = {
           type: group,
           mode: this.mode,
@@ -17498,7 +17442,6 @@ class Parser {
           text
         };
       }
-      // TODO(ts)
       symbol = s;
     } else if (text.charCodeAt(0) >= 0x80) {
       // no symbol for e.g. ^
@@ -17544,22 +17487,15 @@ class Parser {
           label: command,
           isStretchy: false,
           isShifty: true,
-          // TODO(ts)
           base: symbol
         };
       }
     }
-    // TODO(ts)
     return symbol;
   }
 }
 Parser.endOfExpression = new Set(["}", "\\endgroup", "\\end", "\\right", "&"]);
 ;// ./src/parseTree.ts
-/**
- * Provides a single function for parsing an expression using a Parser
- * TODO(emily): Remove this
- */
-
 
 
 
@@ -17695,7 +17631,7 @@ const renderToHTMLTree = function (expression, options) {
     return renderError(error, expression, settings);
   }
 };
-const version = "0.16.45";
+const version = "0.18.9";
 const __domTree = {
   Span: Span,
   Anchor: Anchor,
